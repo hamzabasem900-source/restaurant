@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { MenuItem, Category, Order, OrderStatus, RestaurantSettings } from '../types';
 import {
   BookOpen,
@@ -778,18 +778,18 @@ export default function AdminPanel({
             <div className="bg-white p-6 rounded-3xl border border-neutral-100 shadow-xs space-y-3.5">
               <div className="flex items-center gap-3">
                 <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black">٤</span>
-                <h3 className="font-extrabold text-neutral-950 text-base">كيفية تنزيل التطبيق والرفع للمستضيف النهائي</h3>
+                <h3 className="font-extrabold text-neutral-950 text-base">مشاركة التطبيق مع زبائن المطعم</h3>
               </div>
               <p className="text-xs text-neutral-500 leading-relaxed">
-                لقد أنشأنا الموقع ليعمل بكفاءة مطلقة كـ تطبيق ويب متطور (PWA):
+                تم دمج ميزة التثبيت الفوري (PWA) ليعمل الموقع كتطبيق هاتف ذكي مباشر:
               </p>
               <div className="bg-neutral-50/70 p-4 rounded-2xl border border-neutral-205 text-xs text-neutral-600 space-y-1.5">
-                <p><b>الرفع لزوارك:</b> الكود مكتوب بـ React و Tailwind الحديث وهو معالج محلياً وخفيف جداً.</p>
-                <p><b>الملف المضغوط ZIP:</b> يمكنك تصدير الملفات كاملة من لوحة إعدادات سحابة AI Studio وتنزيله على حاسوبك، ورفعه إلى أي استضافة مجانية أو تجارية بضغطة زر لفتح نطاق واسع للمشترين!</p>
-                <p><b>أيقونة الهاتف:</b> بتبويب "تثبيت التطبيق على الشاشة" بالرئيسية، توجد تعليمات مصورة واضحة جداً لكل مستخدم لهاتف آيفون أو أندرويد لإنشاء تطبيق مصغر على واجهة جواله.</p>
+                <p><b>نشر رابط المتجر:</b> يمكنك نسخ رابط هذا الموقع ومشاركته فوراً على صفحات التواصل الاجتماعي الخاصة بالمطعم (فيسبوك، إنستغرام، واتساب).</p>
+                <p><b>أيقونة شاشة الهاتف المباشرة:</b> يمكن لكل زبون إضافة هذه الصفحة إلى شاشته الرئيسية لتبدو كأي تطبيق آخر ومتابعة قائمة المأكولات فوراً.</p>
+                <p><b>التحديث التلقائي السريع:</b> أي تغيير تجريه هنا على سعر وجبة أو توفرها يظهر مباشرة للزبائن في جميع نوافذهم دون تكلف عناء التحديث.</p>
               </div>
               <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[10px] font-bold">
-                💡 معلومة مفيدة: تذكر دائماً أن التعديل على القائمة أو إضافة مأكولات يحفظ فوراً في المتصفح، حتى لو أغلقت النافذة وعدت لاحقاً ستكون جميع تعاديلك وأسعارك آمنة ومحفوظة!
+                💡 معلومة مفيدة: تذكر دائماً أن التعديل على القائمة وإضافة وجبات شاورما وبروستد جديدة يحفظ بأمان واستمرارية في قاعدة بيانات المتصفح للوصول إليه بأي وقت!
               </div>
             </div>
           </div>

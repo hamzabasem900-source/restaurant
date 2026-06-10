@@ -1,0 +1,21 @@
+{
+  "short_name": "باب شرقي",
+  "name": "مطعم باب شرقي - المذاق الشامي الأصيل",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/192/food.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/food.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#fbbf24",
+  "theme_color": "#d97706",
+  "display": "standalone",
+  "orientation": "portrait"
+}

@@ -73,6 +73,33 @@ export default function App() {
     }
   }, [currentTrackingOrderId]);
 
+  // Listen for storage events from other tabs to sync data instantly in real-time
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      try {
+        if (e.key === 'bab_sharqi_menu' && e.newValue) {
+          setMenuItems(JSON.parse(e.newValue));
+        }
+        if (e.key === 'bab_sharqi_orders' && e.newValue) {
+          setOrders(JSON.parse(e.newValue));
+        }
+        if (e.key === 'bab_sharqi_cart' && e.newValue) {
+          setCart(JSON.parse(e.newValue));
+        }
+        if (e.key === 'bab_sharqi_settings' && e.newValue) {
+          setSettings(JSON.parse(e.newValue));
+        }
+        if (e.key === 'bab_sharqi_tracking_id') {
+          setCurrentTrackingOrderId(e.newValue || null);
+        }
+      } catch (err) {
+        console.error('Error syncing state in real-time:', err);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   // Audio simulation or notification (safely handled visually to bypass sound permissions issues on sandboxes)
   const [newOrderArrivedToast, setNewOrderArrivedToast] = useState(false);
 
@@ -208,7 +235,7 @@ export default function App() {
                   لقد استلمنا طلب طعامك بمطعم باب شرقي.
                 </p>
                 <div className="bg-neutral-900 p-2.5 rounded-xl mt-3 border border-neutral-800 text-[10px] text-neutral-400">
-                  💡 <b>تجربة ممتعة للمدير:</b> يمكنك التغيير الآن إلى تبويب <b>"لوحة التحكم"</b> بالأعلى لتشاهد الطلب الذي أرسلته فوراً هناك، والموافقة عليه لرؤية انعكاس القبول حياً!
+                  💡 <b>تحديثات حية:</b> يتحدث النظام تلقائياً لإرسال حالات وتفاصيل وجبتك من المطبخ إليك بالثانية دون أي تأخير!
                 </div>
               </div>
               <button
@@ -417,14 +444,14 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Real-time instruction indicator reminding client how to test and play with it! */}
-                  <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 space-y-2">
-                    <p className="text-xs text-amber-900 font-bold flex items-center gap-1.5">
-                      <Cpu className="w-4.5 h-4.5 text-amber-600" />
-                      تجربة تفاعلية لمحاكاة الواقع حياً:
+                  {/* Real-time status update notice */}
+                  <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 space-y-1">
+                    <p className="text-xs text-amber-900 font-bold flex items-center gap-1.5 font-sans">
+                      <Clock className="w-4 h-4 text-amber-600 animate-pulse" />
+                      مؤشر تقدم الطلب التلقائي واللحظي:
                     </p>
-                    <p className="text-[10px] text-amber-800 leading-relaxed">
-                      نظراً لأنك فتحت الموقع على شاشتك لحساب العميل والمدير معاً للمحاكاة المباشرة، <b>انتقل الآن إلى زر "لوحة التحكم (المدير)" بالأعلى</b>، وانقر على <b>الموافقة والتحضير</b>، وارجع مجدداً لهذه الشاشة لتلاحظ كيف تغيرت خطوة التتبع حياً بالثانية كما لو كان طلباً حقيقياً بالمطعم!
+                    <p className="text-[10px] text-amber-800 leading-relaxed font-sans">
+                      نقوم بتحديث خطوات ومراحل إعداد وجبات الشاورما والبروستد وتوصيلها فوراً بالثانية. ستتغير هذه المؤشرات أمامك تلقائياً وبشكل حي ومباشر دون الحاجة لتحديث الصفحة!
                     </p>
                   </div>
 

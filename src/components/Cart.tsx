@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { CartItem, Order, MenuItem } from '../types';
 import { ShoppingBag, Trash2, ArrowLeft, Truck, ShoppingCart, Send, CreditCard, ChevronLeft } from 'lucide-react';
 import { motion } from 'motion/react';

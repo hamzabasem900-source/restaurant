@@ -21,14 +21,22 @@ import {
   Trash2,
   ChevronLeft,
   X,
-  Plus
+  Plus,
+  Search,
+  Calendar,
+  DollarSign,
+  Filter,
+  FileText,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { playNotificationSound } from '../utils/audio';
 
 interface AdminPanelProps {
   menuItems: MenuItem[];
   onAddMenuItem: (newItem: Omit<MenuItem, 'id'>) => void;
-  onUpdateMenuItemPrice: (id: string, newPrice: number) => void;
+  onUpdateMenuItem: (updatedItem: MenuItem) => void;
   onToggleAvailability: (id: string) => void;
   onDeleteMenuItem: (id: string) => void;
   onRestoreDefaultMenu: () => void;
@@ -37,12 +45,16 @@ interface AdminPanelProps {
   onClearOrders: () => void;
   settings: RestaurantSettings;
   onUpdateSettings: (newSettings: RestaurantSettings) => void;
+  soundEnabled: boolean;
+  onToggleSound: (enabled: boolean) => void;
+  showToast?: (text: string, type?: 'success' | 'warning' | 'info' | 'error') => void;
+  setConfirmModal?: (modal: { message: string; description?: string; onConfirm: () => void } | null) => void;
 }
 
 export default function AdminPanel({
   menuItems,
   onAddMenuItem,
-  onUpdateMenuItemPrice,
+  onUpdateMenuItem,
   onToggleAvailability,
   onDeleteMenuItem,
   onRestoreDefaultMenu,
@@ -51,8 +63,17 @@ export default function AdminPanel({
   onClearOrders,
   settings,
   onUpdateSettings,
+  soundEnabled,
+  onToggleSound,
+  showToast,
+  setConfirmModal,
 }: AdminPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'orders' | 'menu' | 'guide' | 'settings'>('orders');
+  const [activeSubTab, setActiveSubTab] = useState<'orders' | 'menu' | 'history' | 'guide' | 'settings'>('orders');
+
+  // Search History State
+  const [historySearchName, setHistorySearchName] = useState('');
+  const [historySearchPhone, setHistorySearchPhone] = useState('');
+  const [historySelectedStatus, setHistorySelectedStatus] = useState<string>('all');
 
   // New Item State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -66,9 +87,33 @@ export default function AdminPanel({
   // Status Sound / Notification State (Simulated)
   const [showNotificationAlert, setShowNotificationAlert] = useState(false);
 
-  // Edit Pricing Inline temporary values
-  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
-  const [tempPriceValue, setTempPriceValue] = useState<string>('');
+  // Custom safety notification triggering helpers
+  const triggerToast = (text: string, type: 'success' | 'warning' | 'info' | 'error' = 'success') => {
+    if (showToast) {
+      showToast(text, type);
+    } else {
+      alert(text);
+    }
+  };
+
+  const triggerConfirm = (message: string, description: string, onConfirm: () => void) => {
+    if (setConfirmModal) {
+      setConfirmModal({ message, description, onConfirm });
+    } else {
+      if (confirm(`${message}\n${description}`)) {
+        onConfirm();
+      }
+    }
+  };
+
+  // Edit Product Modal State
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [editItemName, setEditItemName] = useState('');
+  const [editItemCategory, setEditItemCategory] = useState<Exclude<Category, 'all'>>('shawarma');
+  const [editItemPrice, setEditItemPrice] = useState<string>('');
+  const [editItemDesc, setEditItemDesc] = useState('');
+  const [editItemImage, setEditItemImage] = useState('');
+  const [editItemAddOns, setEditItemAddOns] = useState('');
 
   // Settings local state
   const [localName, setLocalName] = useState(settings.name);
@@ -87,19 +132,19 @@ export default function AdminPanel({
       currency: localCurrency,
       isOpen: settings.isOpen,
     });
-    alert('✓ تم حفظ الإعدادات وتخصيص الموقع بنجاح!');
+    triggerToast('✓ تم حفظ الإعدادات وتخصيص الموقع بنجاح!', 'success');
   };
 
   const handleAddNewItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim() || !newItemPrice.trim()) {
-      alert('⚠️ يرجى ملء اسم الوجبة والسعر على الأقل.');
+      triggerToast('⚠️ يرجى ملء اسم الوجبة والسعر على الأقل.', 'warning');
       return;
     }
 
     const priceNum = parseFloat(newItemPrice);
     if (isNaN(priceNum) || priceNum <= 0) {
-      alert('⚠️ يرجى إدخال سعر رقمي صحيح أكبر من صفر.');
+      triggerToast('⚠️ يرجى إدخال سعر رقمي صحيح أكبر من صفر.', 'warning');
       return;
     }
 
@@ -138,22 +183,51 @@ export default function AdminPanel({
     setNewItemDesc('');
     setNewItemImage('');
     setShowAddForm(false);
-    alert('✓ تم رفع وإضافة المنتج الجديد بنجاح فوري للقائمة!');
+    triggerToast('✓ تم رفع وإضافة المنتج الجديد بنجاح فوري للقائمة!', 'success');
   };
 
-  const handleSavePriceChange = (id: string) => {
-    const val = parseFloat(tempPriceValue);
-    if (isNaN(val) || val < 0) {
-      alert('⚠️ يرجى كتابة سعر رقمي صحيح.');
+  const startEditingItem = (item: MenuItem) => {
+    setEditingItem(item);
+    setEditItemName(item.name);
+    setEditItemCategory(item.category);
+    setEditItemPrice(item.price.toString());
+    setEditItemDesc(item.description);
+    setEditItemImage(item.image);
+    setEditItemAddOns(item.add_on_options ? item.add_on_options.join(', ') : '');
+  };
+
+  const handleSaveFullItemEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+
+    if (!editItemName.trim() || !editItemPrice.trim()) {
+      triggerToast('⚠️ يرجى ملء اسم الوجبة والسعر على الأقل.', 'warning');
       return;
     }
-    onUpdateMenuItemPrice(id, val);
-    setEditingPriceId(null);
-  };
 
-  const startEditPrice = (item: MenuItem) => {
-    setEditingPriceId(item.id);
-    setTempPriceValue(item.price.toString());
+    const priceNum = parseFloat(editItemPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      triggerToast('⚠️ يرجى إدخال سعر رقمي صحيح أكبر من صفر.', 'warning');
+      return;
+    }
+
+    const addOnsArr = editItemAddOns
+      .split(',')
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0);
+
+    onUpdateMenuItem({
+      ...editingItem,
+      name: editItemName.trim(),
+      category: editItemCategory,
+      price: priceNum,
+      description: editItemDesc.trim() || 'وجبة جديدة ومميزة تحضر بطريقة باب شرقي الشهيرة.',
+      image: editItemImage.trim(),
+      add_on_options: addOnsArr,
+    });
+
+    setEditingItem(null);
+    triggerToast('✓ تم حفظ تعديل بيانات الوجبة بالكامل بنجاح!', 'success');
   };
 
   // Status Badge Colors helper
@@ -181,12 +255,42 @@ export default function AdminPanel({
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="bg-amber-500 text-neutral-950 font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase">
-                لوحة تحكم المدير
+                لوحة تحكم الآدمن
               </span>
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
               <span className="text-xs text-neutral-400">قناة اتصال الطلبات مفعلة حياً</span>
+              
+              {/* Sound status indicator and gesture unmuter */}
+              <button
+                onClick={() => {
+                  const nextState = !soundEnabled;
+                  onToggleSound(nextState);
+                  if (nextState) {
+                    // Instantly trigger a fast, friendly status chime to bypass browser autoplay policy restrictions
+                    setTimeout(() => playNotificationSound('status_update'), 100);
+                  }
+                }}
+                className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold transition cursor-pointer ${
+                  soundEnabled
+                    ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                }`}
+                title={soundEnabled ? 'اضغط لكتم الأصوات التنبيهية' : 'اضغط لتفعيل جرس المطبخ وتجربة الصوت'}
+              >
+                {soundEnabled ? (
+                  <>
+                    <Volume2 className="w-3 h-3 text-emerald-400" />
+                    <span>جرس المطبخ مفعل 🔊</span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-3 h-3 text-neutral-400" />
+                    <span>جرس صامت 🔇</span>
+                  </>
+                )}
+              </button>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight font-sans">
               لوحة إدارة <span className="text-amber-400">سوبر باب شرقي</span>
@@ -199,17 +303,31 @@ export default function AdminPanel({
           <div className="flex flex-wrap gap-2 pt-2 md:pt-0">
             <button
               onClick={() => {
-                if (confirm('هل أنت متأكد من تفريغ كافة الطلبات المحفوظة للتجربة؟')) onClearOrders();
+                triggerConfirm(
+                  'هل أنت متأكد من مسح وحذف سجل الطلبات بالكامل؟',
+                  'لا يمكن التراجع عن هذا الإجراء وسيتم تصفير كافة طلبات المستخدمين النشطة والأرشيف.',
+                  () => {
+                    onClearOrders();
+                    triggerToast('🗑️ تم إفراغ وحذف سجل الطلبات والمبيعات بنجاح.', 'success');
+                  }
+                );
               }}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-bold rounded-xl transition"
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 border border-red-500/20 text-white text-xs font-bold rounded-xl transition shadow-md hover:shadow-red-500/10 cursor-pointer flex items-center gap-1.5"
             >
-              حذف الأرشيف المالي للطلبات
+              <span>🗑️ حذف سجل الطلبات</span>
             </button>
             <button
               onClick={() => {
-                if (confirm('تحذير: هذا سيؤدي إلى إعادة القائمة لعناصر الشاورما والبروستد الافتراضية وحذف المنتجات المعدلة. هل ترغب بالاستمرار؟')) onRestoreDefaultMenu();
+                triggerConfirm(
+                  'هل ترغب فعلاً باستعادة قائمة الطعام الافتراضية؟',
+                  'تحذير: هذا سيؤدي إلى إعادة القائمة لعناصر الشاورما والبروستد الافتراضية وحذف أي منتجات مخصصة جديدة أو تعديلات أجريتها.',
+                  () => {
+                    onRestoreDefaultMenu();
+                    triggerToast('🍲 تم إعادة ضبط قائمة الطعام للقالب الافتراضي بنجاح.', 'success');
+                  }
+                );
               }}
-              className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold rounded-xl transition"
+              className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-bold rounded-xl transition cursor-pointer"
             >
               استعادة قائمة وجبات الافتراضية
             </button>
@@ -227,6 +345,16 @@ export default function AdminPanel({
             }`}
           >
             📋 الطلبات الحية الواردة ({orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length})
+          </button>
+          <button
+            onClick={() => setActiveSubTab('history')}
+            className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold shrink-0 transition ${
+              activeSubTab === 'history'
+                ? 'bg-amber-500 text-neutral-950'
+                : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+            }`}
+          >
+            🔍 سجل الطلبات الشامل ({orders.length})
           </button>
           <button
             onClick={() => setActiveSubTab('menu')}
@@ -264,28 +392,61 @@ export default function AdminPanel({
       {/* SUB-TAB CONTENTS */}
 
       {/* 1. ORDERS MONITOR */}
-      {activeSubTab === 'orders' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-[#111] flex items-center gap-1.5">
-              <Clock className="w-5.5 h-5.5 text-amber-600" />
-              قنوات الطلبات اللحظية (بالوقت الحقيقي):
-            </h2>
-            <span className="text-neutral-500 text-xs font-bold bg-neutral-100 px-3 py-1 rounded-lg">
-              إجمالي المعاملات: {orders.length} طلب
-            </span>
-          </div>
+      {activeSubTab === 'orders' && (() => {
+        const ratedOrders = orders.filter((o) => o.rating);
+        const averageRating = ratedOrders.length > 0
+          ? (ratedOrders.reduce((acc, o) => acc + o.rating!.stars, 0) / ratedOrders.length).toFixed(1)
+          : null;
 
-          {orders.length === 0 ? (
-            <div className="bg-white rounded-3xl p-16 text-center border border-neutral-100 shadow-xs">
-              <div className="text-4xl mb-3">📬</div>
-              <h3 className="font-bold text-neutral-800 text-sm sm:text-base">لا توجد أي طلبات مستلمة حتى اللحظة</h3>
-              <p className="text-xs text-neutral-400 mt-1 max-w-md mx-auto leading-relaxed">
-                أي زبون يقوم بطلب وجبة شاورما أو بروستد من واجهة المشتري، ستظهر معلوماته التفصيلية وعنوانه هنا فوراً وبشكل حي، لمتابعة الطلبات وتعديل حالتها!
-              </p>
+        return (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-extrabold text-[#111] flex items-center gap-1.5">
+                <Clock className="w-5.5 h-5.5 text-amber-600" />
+                قنوات الطلبات اللحظية (بالوقت الحقيقي):
+              </h2>
+              <span className="text-neutral-500 text-xs font-bold bg-neutral-100 px-3 py-1 rounded-lg">
+                إجمالي المعاملات: {orders.length} طلب
+              </span>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            {/* Real-time feedback analytics banner for the restaurant */}
+            {averageRating && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl animate-bounce">⭐</div>
+                  <div>
+                    <h4 className="font-extrabold text-[#111] text-xs sm:text-sm">لوحة رصد جودة الخدمات والطهي الحي</h4>
+                    <p className="text-[10px] sm:text-xs text-neutral-500">تم جمع الآراء والتقييمات بالثانية من الزبائن الذين استلموا طلباتهم من المطبخ.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-center bg-white px-4 py-2 rounded-2xl border border-neutral-100 shadow-xs">
+                    <span className="block text-[9px] text-neutral-400 font-bold">متوسط التقييم العام</span>
+                    <span className="text-base font-black text-amber-600 font-sans">{averageRating} <span className="text-neutral-450 text-[10px] font-normal">/ ٥</span></span>
+                  </div>
+                  <div className="text-center bg-white px-4 py-2 rounded-2xl border border-neutral-100 shadow-xs">
+                    <span className="block text-[9px] text-neutral-400 font-bold">الآراء والملاحظات</span>
+                    <span className="text-base font-black text-neutral-800 font-sans">{ratedOrders.length} زبون</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {orders.length === 0 ? (
+              <div className="bg-white rounded-3xl p-16 text-center border border-neutral-100 shadow-xs">
+                <div className="text-4xl mb-3">📬</div>
+                <h3 className="font-bold text-neutral-800 text-sm sm:text-base">لا توجد أي طلبات مستلمة حتى اللحظة</h3>
+                <p className="text-xs text-neutral-400 mt-1 max-w-md mx-auto leading-relaxed">
+                  أي زبون يقوم بطلب وجبة شاورما أو بروستد من واجهة المشتري، ستظهر معلوماته التفصيلية وعنوانه هنا فوراً وبشكل حي، لمتابعة الطلبات وتعديل حالتها!
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {orders.map((order) => {
                 const statusMeta = getStatusInfo(order.status);
                 return (
@@ -321,6 +482,27 @@ export default function AdminPanel({
                         {order.notes && (
                           <div className="bg-neutral-50 p-2 rounded-xl text-neutral-600 text-[10px] sm:text-xs">
                             💡 ملاحظة دليفري: {order.notes}
+                          </div>
+                        )}
+
+                        {order.rating && (
+                          <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 mt-2 space-y-1 text-right">
+                            <p className="text-[10px] text-amber-950 font-bold flex items-center gap-1">
+                              ⭐ تقييم المشتري المباشر للخدمة:
+                            </p>
+                            <div className="flex gap-0.5 text-amber-500">
+                              {Array.from({ length: 5 }).map((_, idx) => (
+                                <span key={idx} className="text-xs">
+                                  {idx < order.rating!.stars ? '⭐' : '☆'}
+                                </span>
+                              ))}
+                            </div>
+                            {order.rating.comment && (
+                              <p className="text-[11px] text-neutral-800 bg-white/70 p-2 rounded-xl mt-1 leading-relaxed font-sans italic">
+                                💬 "{order.rating.comment}"
+                              </p>
+                            )}
+                            <p className="text-[8px] text-neutral-400 font-mono text-left block">الوصول: {order.rating.createdAt}</p>
                           </div>
                         )}
                       </div>
@@ -431,7 +613,321 @@ export default function AdminPanel({
             </div>
           )}
         </motion.div>
-      )}
+        );
+      })()}
+
+      {/* 1.5. ORDERS HISTORY AND ADVANCED SEARCH */}
+      {activeSubTab === 'history' && (() => {
+        const filteredHistoryOrders = orders.filter((order) => {
+          // Search Name, Delivery details or Item names
+          const nameMatch = !historySearchName.trim() ||
+            order.customerName.toLowerCase().includes(historySearchName.toLowerCase()) ||
+            order.id.toLowerCase().includes(historySearchName.toLowerCase()) ||
+            order.address.toLowerCase().includes(historySearchName.toLowerCase()) ||
+            order.items.some(item => item.name.toLowerCase().includes(historySearchName.toLowerCase()));
+
+          // Search Phone
+          const phoneMatch = !historySearchPhone.trim() ||
+            order.customerPhone.includes(historySearchPhone.trim());
+
+          // Filter Status
+          const statusMatch = historySelectedStatus === 'all' ||
+            order.status === historySelectedStatus;
+
+          return nameMatch && phoneMatch && statusMatch;
+        });
+
+        // Compute marketing statistics for the matched group
+        const totalMatchingCount = filteredHistoryOrders.length;
+        const completedOrders = filteredHistoryOrders.filter(o => o.status === 'completed');
+        const totalSalesAmount = completedOrders.reduce((sum, o) => sum + o.totalPrice, 0);
+        
+        const ratedOrders = filteredHistoryOrders.filter(o => o.rating);
+        const averageRating = ratedOrders.length > 0
+          ? (ratedOrders.reduce((sum, o) => sum + o.rating!.stars, 0) / ratedOrders.length).toFixed(1)
+          : null;
+
+        return (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 text-right">
+            {/* Elegant Header Banner */}
+            <div className="bg-gradient-to-l from-amber-500/5 to-neutral-50 border border-neutral-200/60 p-6 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+              <div className="space-y-1">
+                <h2 className="text-xl font-extrabold text-[#111] flex items-center gap-2">
+                  <Search className="w-5.5 h-5.5 text-amber-600" />
+                  أرشيف المبيعات الذكي ومطابقة فواتير الزبائن:
+                </h2>
+                <p className="text-xs text-neutral-500 leading-relaxed max-w-2xl font-sans">
+                  منصتنا التفاعلية لمتابعة تفاصيل حركة الكاش والبطاقات، وسرعة رصد عناوين توصيل الوجبات وتتبع آراء الزوار الكرام للارتقاء بجودة المطبخ الذهبي.
+                </p>
+              </div>
+              <div className="bg-white px-4 py-2.5 rounded-2xl border border-neutral-100 shadow-xs flex items-center gap-2 font-bold text-xs shrink-0">
+                <span className="text-neutral-400">إجمالي نتائج البحث:</span>
+                <span className="text-amber-600 font-black text-sm font-sans">{totalMatchingCount} طلب</span>
+              </div>
+            </div>
+
+            {/* Quick Strategic Key Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-2xl border border-neutral-150 shadow-xs flex items-center gap-4">
+                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-sm font-black">
+                  💰
+                </div>
+                <div>
+                  <span className="block text-[10px] text-neutral-400 font-bold">المداخيل المكتملة المقبوضة</span>
+                  <span className="text-sm font-black text-emerald-800 font-sans">
+                    {totalSalesAmount.toFixed(2)} {settings.currency || 'د.أ'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-neutral-150 shadow-xs flex items-center gap-4">
+                <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-sm font-black">
+                  ⭐
+                </div>
+                <div>
+                  <span className="block text-[10px] text-neutral-400 font-bold">تقييم الوجبات والسرعة</span>
+                  <span className="text-sm font-black text-amber-700 font-sans">
+                    {averageRating ? `${averageRating} / ٥` : 'لا توجد تقييمات'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-neutral-150 shadow-xs flex items-center gap-4">
+                <div className="w-10 h-10 bg-neutral-100 text-neutral-600 rounded-xl flex items-center justify-center text-sm font-black">
+                  📦
+                </div>
+                <div>
+                  <span className="block text-[10px] text-neutral-400 font-bold">كفاءة الخدمة والتدبير</span>
+                  <span className="text-sm font-black text-neutral-800 font-sans">
+                    {completedOrders.length} تسليم ناجح
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Micro Search Controls Section */}
+            <div className="bg-white p-5 rounded-3xl border border-neutral-150 shadow-xs space-y-4">
+              <h3 className="text-xs font-black text-neutral-900 flex items-center gap-1.5">
+                <Filter className="w-4 h-4 text-amber-600" />
+                خيارات البحث الذكي وخيارات الفلترة المتقدمة:
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Name or Item Search */}
+                <div className="relative">
+                  <label className="block text-[10px] font-extrabold text-neutral-500 mb-1.5">ابحث عن اسم الزبون، الوجبة أو تفاصيل المحل:</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="مثال: أحمد، سوبر شاورما، دبل بروستد..."
+                      value={historySearchName}
+                      onChange={(e) => setHistorySearchName(e.target.value)}
+                      className="w-full pl-3 pr-9 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-right font-sans"
+                    />
+                    <Search className="w-4 h-4 text-neutral-400 absolute right-3 top-3.5" />
+                  </div>
+                </div>
+
+                {/* 2. Phone Search */}
+                <div className="relative">
+                  <label className="block text-[10px] font-extrabold text-neutral-500 mb-1.5">البحث برقم الهاتف أو الجوال بالكامل:</label>
+                  <div className="relative">
+                    <input
+                      type="tel"
+                      placeholder="مثال: 079XXXXXXXX"
+                      value={historySearchPhone}
+                      onChange={(e) => setHistorySearchPhone(e.target.value)}
+                      className="w-full pl-3 pr-9 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-left font-mono tracking-wider"
+                      dir="ltr"
+                    />
+                    <Phone className="w-4 h-4 text-neutral-400 absolute right-3 top-3.5" />
+                  </div>
+                </div>
+
+                {/* 3. Status Filter */}
+                <div>
+                  <label className="block text-[10px] font-extrabold text-neutral-500 mb-1.5">تصفية السجل بحسب حالة الطلب الحالية:</label>
+                  <select
+                    value={historySelectedStatus}
+                    onChange={(e) => setHistorySelectedStatus(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-right font-sans cursor-pointer"
+                  >
+                    <option value="all">📁 جميع الفواتير والحالات الكلية</option>
+                    <option value="pending">⏳ فواتير قائمة الانتظار</option>
+                    <option value="preparing">🍳 قيد الطهي والتجهيز الحي</option>
+                    <option value="delivering">🚴 مع كابتن التوصيل على الطريق</option>
+                    <option value="completed">✓ تم التسليم والقبض بنجاح</option>
+                    <option value="cancelled">🛑 طلبات ملغاة مسبقاً</option>
+                  </select>
+                </div>
+              </div>
+
+              {(historySearchName.trim() || historySearchPhone.trim() || historySelectedStatus !== 'all') && (
+                <div className="flex justify-start pt-1">
+                  <button
+                    onClick={() => {
+                      setHistorySearchName('');
+                      setHistorySearchPhone('');
+                      setHistorySelectedStatus('all');
+                    }}
+                    className="text-[10px] text-amber-700 hover:text-amber-800 font-bold underline cursor-pointer"
+                  >
+                    إعادة ضبط الفلاتر وعرض السجل كاملاً
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* List of Matched History Orders */}
+            {filteredHistoryOrders.length === 0 ? (
+              <div className="bg-white rounded-3xl p-16 text-center border border-neutral-100 shadow-xs">
+                <div className="text-4xl mb-3">🔍</div>
+                <h3 className="font-bold text-neutral-800 text-sm sm:text-base">لم نجد أي طلبات تطابق معايير ومفاتيح البحث المحددة</h3>
+                <p className="text-xs text-neutral-400 mt-1 max-w-md mx-auto leading-relaxed">
+                  تأكد من كتابة الرقم بشكل صحيح أو تغيير خيارات فلترة الحالة للوصول للمعلومات المطلوبة فوراً.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredHistoryOrders.map((order) => {
+                  const statusMeta = getStatusInfo(order.status);
+                  return (
+                    <motion.div
+                      key={order.id}
+                      layout
+                      className="bg-white rounded-3xl border border-neutral-200/80 shadow-xs hover:shadow-md transition duration-200 overflow-hidden text-right flex flex-col justify-between"
+                    >
+                      {/* Order top bar */}
+                      <div className="p-5 border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-between gap-2 flex-wrap">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-neutral-900 font-mono tracking-wider">
+                              رقم الفاتورة: #{order.id.slice(0, 8)}...
+                            </span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusMeta.color}`}>
+                              {statusMeta.label}
+                            </span>
+                          </div>
+                          <span className="block text-[10px] text-neutral-400 font-mono">
+                            تاريخ التسجيل: {order.createdAt}
+                          </span>
+                        </div>
+                        <div className="bg-amber-500/10 text-amber-800 px-3 py-1.5 rounded-xl font-bold text-xs">
+                          {order.totalPrice.toFixed(2)} {settings.currency || 'د.أ'}
+                        </div>
+                      </div>
+
+                      {/* Customer / Service Specifications */}
+                      <div className="p-5 space-y-4 flex-1">
+                        <div className="grid grid-cols-2 gap-3 bg-neutral-50 p-3 rounded-2xl border border-neutral-100 text-xs">
+                          <div className="space-y-0.5">
+                            <span className="block text-[9px] text-neutral-400">اسم العميل والزبون</span>
+                            <span className="font-bold text-neutral-800">{order.customerName}</span>
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="block text-[9px] text-neutral-400">رقم التواصل المباشر</span>
+                            <span className="font-bold text-neutral-800 font-mono" dir="ltr">{order.customerPhone}</span>
+                          </div>
+                          <div className="space-y-0.5 col-span-2">
+                            <span className="block text-[9px] text-neutral-400">العنوان وحالة التوصيل</span>
+                            <span className="font-medium text-neutral-700 block leading-relaxed">{order.address}</span>
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="block text-[9px] text-neutral-400">نوع الطلبية</span>
+                            <span className="font-bold text-amber-700">
+                              {order.type === 'delivery' ? '🚴 توصيل منزلي سريّع' : order.type === 'dine_in' ? '🍽️ تجهيز داخل المطعم' : '🎒 استلام من الفرع نفسه'}
+                            </span>
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="block text-[9px] text-neutral-400">بروتوكول الدفع عند الوصول</span>
+                            <span className="font-bold text-neutral-800">
+                              {order.paymentMethod === 'card_on_delivery' ? '💳 بطاقة بنكية/فيزا' : '💵 كاش نقداً بالليرة'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Customer direct note if any */}
+                        {order.notes && (
+                          <div className="bg-amber-500/5 p-3 rounded-2xl border border-dashed border-amber-500/20 text-[10px] text-neutral-700 leading-relaxed font-sans">
+                            💡 ملاحظة دليفري: {order.notes}
+                          </div>
+                        )}
+
+                        {/* Rating block if exists - beautifully highlighted */}
+                        {order.rating && (
+                          <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200 space-y-1">
+                            <p className="text-[10px] text-amber-950 font-bold flex items-center gap-1">
+                              ⭐ تقييم المشتري المباشر للخدمة:
+                            </p>
+                            <div className="flex gap-0.5 text-amber-500">
+                              {Array.from({ length: 5 }).map((_, idx) => (
+                                <span key={idx} className="text-xs">
+                                  {idx < order.rating!.stars ? '⭐' : '☆'}
+                                </span>
+                              ))}
+                            </div>
+                            {order.rating.comment && (
+                              <p className="text-[11px] text-neutral-800 bg-white/70 p-2 rounded-xl mt-1 leading-relaxed font-sans italic">
+                                💬 "{order.rating.comment}"
+                              </p>
+                            )}
+                            <p className="text-[8px] text-neutral-400 font-mono text-left block">زمن الإرسال: {order.rating.createdAt}</p>
+                          </div>
+                        )}
+
+                        {/* List of Ordered Dishes */}
+                        <div className="space-y-2">
+                          <h4 className="text-[11px] font-black text-neutral-400">مكونات ومحتويات الفاتورة:</h4>
+                          <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-2xl overflow-hidden">
+                            {order.items.map((item, index) => (
+                              <div key={index} className="p-3 bg-white hover:bg-neutral-50/50 flex items-center justify-between gap-2 text-xs">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-black text-neutral-800">{item.name}</span>
+                                    <span className="text-[10px] bg-neutral-100 px-2 py-0.5 rounded-lg text-neutral-500 font-bold">
+                                      الكمية: {item.quantity} وجبة
+                                    </span>
+                                  </div>
+                                  {item.selectedAddOns.length > 0 && (
+                                    <span className="block text-[10px] text-neutral-400">
+                                      الإضافات: {item.selectedAddOns.join(' ، ')}
+                                    </span>
+                                  )}
+                                  {item.customerNote && (
+                                    <span className="block text-[10px] text-amber-600 font-sans italic">
+                                      تخصيص المطبخ: "{item.customerNote}"
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-bold text-neutral-700 font-sans shrink-0">
+                                  {(item.price * item.quantity).toFixed(2)} {settings.currency || 'د.أ'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Order Control actions - Pure Read-only log database */}
+                      <div className="p-4 bg-neutral-50 border-t border-neutral-100 flex items-center justify-between gap-2 text-xs">
+                        <span className="text-[10px] text-neutral-400 font-bold shrink-0">
+                          🗄️ الأرشفة: مستند غير قابل للتعديل
+                        </span>
+                        
+                        <div className="flex gap-1.5">
+                          <span className="text-[10px] text-neutral-500 font-sans">
+                            حالة الفاتورة المسجلة: <strong className="font-extrabold">{statusMeta.label}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        );
+      })()}
 
       {/* 2. MENU UPLOADER AND PRICING MANAGE */}
       {activeSubTab === 'menu' && (
@@ -610,60 +1106,41 @@ export default function AdminPanel({
                       </td>
 
                       <td className="p-4">
-                        {editingPriceId === item.id ? (
-                          <div className="flex items-center gap-1.5 max-w-[120px]">
-                            <input
-                              type="text"
-                              value={tempPriceValue}
-                              onChange={(e) => setTempPriceValue(e.target.value)}
-                              className="w-14 px-1.5 py-1 text-xs border border-amber-400 rounded-md font-sans text-center bg-white"
-                              dir="ltr"
-                            />
-                            <button
-                              onClick={() => handleSavePriceChange(item.id)}
-                              className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md text-[10px] font-bold"
-                            >
-                              حفظ
-                            </button>
-                            <button
-                              onClick={() => setEditingPriceId(null)}
-                              className="text-neutral-400 hover:text-neutral-600"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => startEditPrice(item)}
-                            className="text-amber-605 font-bold hover:text-amber-805 flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-md text-[11px]"
-                          >
-                            <Edit className="w-3 h-3" />
-                            تعديل السعر
-                          </button>
-                        )}
+                        <button
+                          onClick={() => startEditingItem(item)}
+                          className="text-amber-600 font-bold hover:text-amber-800 flex items-center gap-1 bg-amber-55 hover:bg-amber-100 border border-amber-200/50 px-2.5 py-1.5 rounded-lg text-[11px] transition cursor-pointer"
+                        >
+                          <Edit className="w-3 h-3" />
+                          تعديل المنتج 📝
+                        </button>
                       </td>
 
                       <td className="p-4">
                         <button
                           onClick={() => onToggleAvailability(item.id)}
-                          className={`px-2 py-1 rounded-full text-[10px] font-bold border transition ${
+                          className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
                             item.available
                               ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
                               : 'bg-red-100 text-red-700 border-red-200 hover:bg-red-200'
                           }`}
                         >
-                          {item.available ? '✓ متوفر الآن للطلب' : '🛑 غير متوفر مؤقتاً'}
+                          {item.available ? '✓ متوفر للطلب' : '🛑 غير متوفر'}
                         </button>
                       </td>
 
                       <td className="p-4 text-center">
                         <button
                           onClick={() => {
-                            if (confirm(`هل ترغب فعلاً بمسح وجبة "${item.name}" نهائياً؟`)) {
-                              onDeleteMenuItem(item.id);
-                            }
+                            triggerConfirm(
+                              `مسح الوجبة "${item.name}"؟`,
+                              'سيتم حذف هذه الوجبة نهائياً من قائمة مأكولات باب شرقي ولن يتمكن العملاء من طلبها.',
+                              () => {
+                                onDeleteMenuItem(item.id);
+                                triggerToast(`🗑️ تم مسح وجبة "${item.name}" بنجاح تام.`, 'success');
+                              }
+                            );
                           }}
-                          className="text-neutral-300 hover:text-red-500 transition p-1"
+                          className="text-neutral-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition"
                         >
                           <Trash2 className="w-4 h-4 mx-auto" />
                         </button>
@@ -868,6 +1345,127 @@ export default function AdminPanel({
             </button>
           </form>
         </motion.div>
+      )}
+
+      {/* Full Product Edit Overlay Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-sans text-right" dir="rtl">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-100 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex justify-between items-center pb-3 border-b border-neutral-800">
+              <h3 className="text-sm font-black text-amber-400">📝 تعديل كامل تفاصيل المنتج</h3>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="text-neutral-400 hover:text-white font-bold text-lg cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFullItemEdit} className="space-y-4">
+              {/* Product Name */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-neutral-300">اسم الوجبة:</label>
+                <input
+                  type="text"
+                  required
+                  value={editItemName}
+                  onChange={(e) => setEditItemName(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="مثال: شاورما دبل عربي سبيشال"
+                />
+              </div>
+
+              {/* Category and Price Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-neutral-300">التصنيف:</label>
+                  <select
+                    value={editItemCategory}
+                    onChange={(e) => setEditItemCategory(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none"
+                  >
+                    <option value="shawarma">شاورما 🥙</option>
+                    <option value="broasted">بروستد 🍗</option>
+                    <option value="appetizers">مقبلات وصوصات 🍟</option>
+                    <option value="drinks">مشروبات وغازيات 🥤</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-neutral-300">السعر ({settings.currency}):</label>
+                  <input
+                    type="text"
+                    required
+                    value={editItemPrice}
+                    onChange={(e) => setEditItemPrice(e.target.value)}
+                    className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500 text-center font-sans font-bold"
+                    placeholder="مثال: 18.00"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-neutral-300">الوصف أو المكونات:</label>
+                <textarea
+                  value={editItemDesc}
+                  onChange={(e) => setEditItemDesc(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed"
+                  rows={2}
+                  placeholder="تفاصيل الحشوة والبطاطس والثومية الحارة..."
+                />
+              </div>
+
+              {/* Image URL */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-neutral-300">رابط صورة الوجبة:</label>
+                <input
+                  type="url"
+                  value={editItemImage}
+                  onChange={(e) => setEditItemImage(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono text-left"
+                  dir="ltr"
+                  placeholder="https://images.unsplash.com/photo-..."
+                />
+              </div>
+
+              {/* Extras Add-ons comma separated list */}
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-neutral-300">الإضافات والمقبلات المرافقة (مفصولة بفاصلة):</label>
+                <input
+                  type="text"
+                  value={editItemAddOns}
+                  onChange={(e) => setEditItemAddOns(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="مثال: جبنة إضافية، ثومية حارة، دبس رمان"
+                />
+                <p className="text-[9px] text-neutral-500">اكتب الخيارات وافصل بينها بفاصلة عربية أو إنجليزية.</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-3">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-black rounded-xl shadow-md transition cursor-pointer"
+                >
+                  حفظ وتطبيق التغييرات ✓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
       )}
     </div>
   );

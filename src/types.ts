@@ -21,6 +21,12 @@ export interface CartItem {
 
 export type OrderStatus = 'pending' | 'preparing' | 'delivering' | 'completed' | 'cancelled';
 
+export interface OrderRating {
+  stars: number;
+  comment?: string;
+  createdAt: string;
+}
+
 export interface Order {
   id: string;
   customerName: string;
@@ -40,6 +46,7 @@ export interface Order {
   status: OrderStatus;
   createdAt: string;
   notes?: string;
+  rating?: OrderRating;
 }
 
 export interface RestaurantSettings {

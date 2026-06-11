@@ -70,25 +70,25 @@ export default function CustomerMenu({ menuItems, currency, onAddToCart }: Custo
   return (
     <div className="max-w-7xl mx-auto px-4 py-6" dir="rtl">
       {/* Top Welcome Title */}
-      <div className="text-center mb-10 mt-2">
-        <h2 className="text-sm font-bold text-amber-600 tracking-widest uppercase mb-1">تذوق الأصالة الشامية على أصولها</h2>
-        <h1 className="text-4xl font-extrabold text-neutral-900 font-sans tracking-tight">قائمة مأكولات <span className="text-amber-600">باب شرقي</span></h1>
-        <p className="mt-2 text-neutral-500 text-xs sm:text-sm max-w-lg mx-auto">
+      <div className="text-center mb-6 mt-1 sm:mb-10 sm:mt-2">
+        <h2 className="text-[10px] sm:text-xs font-bold text-amber-600 tracking-widest uppercase mb-1">تذوق الأصالة الشامية على أصولها</h2>
+        <h1 className="text-2xl sm:text-4xl font-extrabold text-neutral-900 font-sans tracking-tight">قائمة مأكولات <span className="text-amber-600">باب شرقي</span></h1>
+        <p className="mt-1.5 text-neutral-500 text-[11px] sm:text-xs md:text-sm max-w-lg mx-auto">
           تذوق ألذ ساندويشات الشاورما بدبس الرمان والبروستد الذهبي المقرمش المحضر طازجاً يومياً بأجود المكونات المحلية.
         </p>
       </div>
 
       {/* Search and Filters Section */}
-      <div className="mb-8 space-y-4">
+      <div className="mb-6 space-y-3">
         <div className="relative max-w-md mx-auto">
           <input
             type="text"
             placeholder="ابحث عن وجبتك المفضلة (شاورما، بروستد، حمص...)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-4 pr-11 py-3 bg-white border border-neutral-200 rounded-2xl text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-xs text-neutral-900 placeholder:text-neutral-400 font-sans"
+            className="w-full pl-4 pr-11 py-2.5 sm:py-3 bg-white border border-neutral-200 rounded-xl sm:rounded-2xl text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-xs text-neutral-900 placeholder:text-neutral-400 font-sans"
           />
-          <Search className="absolute right-4 top-3.5 w-5 h-5 text-neutral-400" />
+          <Search className="absolute right-4 top-3 sm:top-3.5 w-4.5 h-4.5 sm:w-5 sm:h-5 text-neutral-400" />
         </div>
 
         {/* Categories Chips */}
@@ -118,17 +118,17 @@ export default function CustomerMenu({ menuItems, currency, onAddToCart }: Custo
           <p className="text-xs text-neutral-400 mt-1">تأكد من كتابة أحرف صحيحة أو تصفح الأقسام من الأعلى.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6">
           {filteredItems.map((item) => {
             const isFav = favorites.includes(item.id);
             return (
               <motion.div
                 key={item.id}
                 layoutId={`card-${item.id}`}
-                className={`bg-white rounded-3xl overflow-hidden border ${item.available ? 'border-neutral-100 hover:border-amber-300' : 'border-neutral-100 opacity-65'} shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col group relative`}
+                className={`bg-white rounded-2xl sm:rounded-3xl overflow-hidden border ${item.available ? 'border-neutral-100 hover:border-amber-300' : 'border-neutral-100 opacity-65'} shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col group relative`}
               >
                 {/* Product Image Panel */}
-                <div className="h-52 w-full bg-neutral-100 relative overflow-hidden">
+                <div className="h-28 sm:h-52 w-full bg-neutral-100 relative overflow-hidden">
                   <img
                     src={item.image}
                     alt={item.name}
@@ -137,22 +137,22 @@ export default function CustomerMenu({ menuItems, currency, onAddToCart }: Custo
                   />
                   
                   {/* Category Pill Tag */}
-                  <span className="absolute top-3 right-3 bg-neutral-900/85 backdrop-blur-xs text-amber-400 text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  <span className="absolute top-1.5 right-1.5 sm:top-3 sm:right-3 bg-neutral-900/85 backdrop-blur-xs text-amber-400 text-[8px] sm:text-[10px] font-extrabold px-1.5 py-0.5 sm:px-2.5 sm:py-1 rounded-full uppercase tracking-wider">
                     {categoriesList.find(c => c.id === item.category)?.label || item.category}
                   </span>
 
                   {/* Favorite button */}
                   <button
                     onClick={(e) => toggleFavorite(item.id, e)}
-                    className="absolute top-3 left-3 bg-white/90 backdrop-blur-xs hover:bg-white text-rose-500 p-2 rounded-full shadow-xs transition"
+                    className="absolute top-1.5 left-1.5 sm:top-3 sm:left-3 bg-white/90 backdrop-blur-xs hover:bg-white text-rose-500 p-1.5 sm:p-2 rounded-full shadow-xs transition"
                   >
-                    <Heart className={`w-4 h-4 ${isFav ? 'fill-rose-500' : ''}`} />
+                    <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isFav ? 'fill-rose-500' : ''}`} />
                   </button>
 
                   {/* Out of stock overlay */}
                   {!item.available && (
-                    <div className="absolute inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center">
-                      <span className="bg-red-600 text-white font-black text-sm px-4 py-2 rounded-xl shadow-md">
+                    <div className="absolute inset-0 bg-neutral-900/70 backdrop-blur-xs flex items-center justify-center p-1.5">
+                      <span className="bg-red-600 text-white font-black text-[9px] sm:text-xs px-2.5 py-1.5 rounded-lg shadow-md text-center">
                         غير متوفر مؤقتاً 🛑
                       </span>
                     </div>
@@ -160,42 +160,42 @@ export default function CustomerMenu({ menuItems, currency, onAddToCart }: Custo
                 </div>
 
                 {/* Card Content */}
-                <div className="p-5 flex-1 flex flex-col justify-between">
+                <div className="p-2.5 sm:p-5 flex-1 flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <h3 className="font-extrabold text-[#111] text-lg leading-tight group-hover:text-amber-700 transition duration-150">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1 sm:mb-1.5">
+                      <h3 className="font-extrabold text-neutral-900 text-xs sm:text-base leading-tight group-hover:text-amber-700 transition duration-150 line-clamp-1">
                         {item.name}
                       </h3>
                       {/* Rating simulation just to make it extremely premium */}
-                      <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md">
-                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                      <span className="max-w-fit shrink-0 flex items-center gap-0.5 text-[8px] sm:text-[11px] font-bold text-amber-505 bg-amber-50 px-1 py-0.5 rounded-sm sm:rounded-md scale-95 origin-right">
+                        <Star className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 fill-amber-500 text-amber-505" />
                         4.9
                       </span>
                     </div>
-                    <p className="text-xs text-neutral-500 leading-relaxed line-clamp-3 mb-4">
+                    <p className="text-[10px] sm:text-xs text-neutral-400 leading-normal line-clamp-2 sm:line-clamp-3 mb-2 sm:mb-4">
                       {item.description}
                     </p>
                   </div>
 
                   {/* Card Actions Footer */}
-                  <div className="flex items-center justify-between border-t border-neutral-50 pt-4 mt-auto">
-                    <div>
-                      <span className="text-[10px] text-neutral-400 block font-medium">السعر</span>
-                      <span className="text-xl font-black text-amber-700 font-sans">
-                        {item.price.toFixed(2)} <span className="text-xs text-neutral-500 font-normal">{currency}</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-t border-neutral-100/50 pt-2 sm:pt-4 mt-auto gap-2">
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-[8px] sm:text-[10px] text-neutral-450 font-medium">السعر</span>
+                      <span className="text-xs sm:text-lg font-black text-amber-700 font-sans">
+                        {item.price.toFixed(2)} <span className="text-[9px] sm:text-xs text-neutral-500 font-normal">{currency}</span>
                       </span>
                     </div>
 
                     <button
                       onClick={() => handleOpenAddOnModal(item)}
                       disabled={!item.available}
-                      className={`px-4 py-2.5 rounded-xl text-xs font-bold transition duration-200 flex items-center gap-1.5 ${
+                      className={`w-full sm:w-auto px-2 py-1.5 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black transition duration-200 flex items-center justify-center gap-1 cursor-pointer ${
                         item.available
-                          ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm shadow-amber-600/10'
-                          : 'bg-neutral-150 text-neutral-400 cursor-not-allowed'
+                          ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs shadow-amber-600/10'
+                          : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
                       }`}
                     >
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                       إضافة للسلة
                     </button>
                   </div>

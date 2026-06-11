@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "RestaurantSettings": {
+      "title": "RestaurantSettings",
+      "description": "Global operational configurations, active delivery fees, currency and status of the restaurant.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The name of the restaurant" },
+        "phone": { "type": "string", "description": "Operational telephone number" },
+        "address": { "type": "string", "description": "Store physical location details" },
+        "deliveryFee": { "type": "number", "description": "Flat rate cost for delivery orders" },
+        "currency": { "type": "string", "description": "Default visual currency symbol, e.g., JD" },
+        "isOpen": { "type": "boolean", "description": "Active online ordering switch" }
+      },
+      "required": ["name", "phone", "address", "deliveryFee", "currency", "isOpen"]
+    },
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "An authentic food dish record published on the store's public digital menu.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique menu item key identifier" },
+        "name": { "type": "string", "description": "Local Arabic name of the dish" },
+        "description": { "type": "string", "description": "Delectable description or list of ingredients" },
+        "price": { "type": "number", "description": "Subtotal cost of the food item" },
+        "category": { "type": "string", "description": "Department key, e.g., shawarma, broasted" },
+        "image": { "type": "string", "description": "Unsplash or asset vector image URL link" },
+        "available": { "type": "boolean", "description": "Is this article currently in stock or sold out" },
+        "add_on_options": { "type": "array", "description": "Customizable extras or size upgrades" }
+      },
+      "required": ["id", "name", "description", "price", "category", "image", "available"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A food order transaction completed or submitted by food lovers to the restaurant kitchen.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique transaction auto-identity sequence text" },
+        "customerName": { "type": "string", "description": "Name of the customer" },
+        "customerPhone": { "type": "string", "description": "Direct contact phone number" },
+        "address": { "type": "string", "description": "Delivery address or instructions" },
+        "paymentMethod": { "type": "string", "description": "Selected checkout billing mechanism" },
+        "type": { "type": "string", "description": "Fulfillment route, e.g., delivery, pickup, dine_in" },
+        "items": { "type": "array", "description": "List of subtotal items packed in this order detail" },
+        "totalPrice": { "type": "number", "description": "Grand total bill of the transaction" },
+        "status": { "type": "string", "description": "Order progression status, e.g., pending, completed" },
+        "createdAt": { "type": "string", "description": "ISO compliant write local timestamp" },
+        "notes": { "type": "string", "description": "Any custom instructions" },
+        "rating": { "type": "object", "description": "Post-consumption rating stars and comment details" }
+      },
+      "required": ["id", "customerName", "customerPhone", "address", "paymentMethod", "type", "items", "totalPrice", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/settings/{settingsId}": {
+      "schema": "RestaurantSettings",
+      "description": "Singleton location supporting active setting variables."
+    },
+    "/menuItems/{itemId}": {
+      "schema": "MenuItem",
+      "description": "Authorized items list published on the storefront."
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Database recording customer transactions and order statuses."
+    }
+  }
+}

@@ -6,6 +6,9 @@ import Cart from './components/Cart';
 import AdminPanel from './components/AdminPanel';
 import PwaInstallGuide from './components/PwaInstallGuide';
 import { playNotificationSound, initAudioContext } from './utils/audio';
+import { db } from './firebase';
+import { doc, collection } from 'firebase/firestore';
+import { safeSetDoc, safeDeleteDoc, safeOnSnapshot, OperationType } from './firebase';
 import {
   Utensils,
   ShoppingBag,
@@ -97,6 +100,12 @@ export default function App() {
   }, [soundEnabled]);
 
   useEffect(() => {
+    // Audit sound alerts: Only admins receive status change audio blips
+    if (!isAdminUnlocked) {
+      prevOrdersRef.current = orders;
+      return;
+    }
+
     if (isFirstAudioRun.current) {
       isFirstAudioRun.current = false;
       prevOrdersRef.current = orders;
@@ -127,21 +136,14 @@ export default function App() {
     }
 
     prevOrdersRef.current = orders;
-  }, [orders, soundEnabled]);
+  }, [orders, soundEnabled, isAdminUnlocked]);
 
-  // Looping continuous alarm sound for pending orders
+  // Looping continuous alarm sound for pending orders (Only for Admin dashboard)
   useEffect(() => {
-    if (!soundEnabled) return;
+    if (!soundEnabled || !isAdminUnlocked) return;
 
-    let shouldRing = false;
-    if (isAdminUnlocked) {
-      // Admin hears alarm if any order in the entire system is pending
-      shouldRing = orders.some((o) => o.status === 'pending');
-    } else {
-      // Regular customer hears alarm if their currently tracked order is pending
-      const trackedOrder = orders.find((o) => o.id === currentTrackingOrderId);
-      shouldRing = trackedOrder?.status === 'pending';
-    }
+    // Admin hears alarm if any order in the entire system is pending
+    const shouldRing = orders.some((o) => o.status === 'pending');
 
     if (!shouldRing) return;
 
@@ -153,7 +155,7 @@ export default function App() {
     }, 4500); // Repeat every 4.5 seconds to command persistent attention with crisp audio
 
     return () => clearInterval(interval);
-  }, [orders, soundEnabled, isAdminUnlocked, currentTrackingOrderId]);
+  }, [orders, soundEnabled, isAdminUnlocked]);
 
   // Monitor brute-force lockout status in real-time
   useEffect(() => {
@@ -176,22 +178,85 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Persists states in localStorage on changes
+  // 1. Live Sync Restaurant Settings from Firestore '/settings/main' doc
   useEffect(() => {
-    localStorage.setItem('bab_sharqi_menu', JSON.stringify(menuItems));
-  }, [menuItems]);
+    const settingsDocRef = doc(db, 'settings', 'main');
+    const unsubscribe = safeOnSnapshot(settingsDocRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const cloudSettings = snapshot.data() as RestaurantSettings;
+        setSettings(cloudSettings);
+      } else {
+        // If settings doc is not initialized on the cloud yet, write reference configurations
+        safeSetDoc(settingsDocRef, INITIAL_SETTINGS).then(() => {
+          setSettings(INITIAL_SETTINGS);
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
+  // 2. Live Sync Menu Items List from Firestore '/menuItems' collection
   useEffect(() => {
-    localStorage.setItem('bab_sharqi_orders', JSON.stringify(orders));
-  }, [orders]);
+    const menuColRef = collection(db, 'menuItems');
+    const unsubscribe = safeOnSnapshot(menuColRef, (snapshot) => {
+      const items: MenuItem[] = [];
+      snapshot.forEach((docSnap) => {
+        items.push(docSnap.data() as MenuItem);
+      });
+      
+      if (items.length > 0) {
+        setMenuItems(items);
+      } else {
+        // First-ever initialization: seed and publish static defaults onto remote Firestore collection
+        DEFAULT_MENU_ITEMS.forEach((item) => {
+          safeSetDoc(doc(db, 'menuItems', item.id), item);
+        });
+        setMenuItems(DEFAULT_MENU_ITEMS);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
+  // 3. Live Sync Active Orders List: Admin gets all, customer gets only their currently tracked order
+  useEffect(() => {
+    if (isAdminUnlocked) {
+      const ordersColRef = collection(db, 'orders');
+      const unsubscribe = safeOnSnapshot(
+        ordersColRef,
+        (snapshot) => {
+          const loadedOrders: any[] = [];
+          snapshot.forEach((docSnap) => {
+            loadedOrders.push(docSnap.data());
+          });
+          loadedOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          setOrders(loadedOrders as Order[]);
+        },
+        OperationType.LIST
+      );
+      return () => unsubscribe();
+    } else if (currentTrackingOrderId) {
+      const orderDocRef = doc(db, 'orders', currentTrackingOrderId);
+      const unsubscribe = safeOnSnapshot(
+        orderDocRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            setOrders([snapshot.data() as Order]);
+          } else {
+            setOrders([]);
+          }
+        },
+        OperationType.GET
+      );
+      return () => unsubscribe();
+    } else {
+      setOrders([]);
+    }
+  }, [isAdminUnlocked, currentTrackingOrderId]);
+
+  // Persists individual transient cart state local to this browser
   useEffect(() => {
     localStorage.setItem('bab_sharqi_cart', JSON.stringify(cart));
   }, [cart]);
-
-  useEffect(() => {
-    localStorage.setItem('bab_sharqi_settings', JSON.stringify(settings));
-  }, [settings]);
 
   useEffect(() => {
     if (currentTrackingOrderId) {
@@ -267,8 +332,9 @@ export default function App() {
     const itemsTotal = cart.reduce((acc, item) => acc + item.menuItem.price * item.quantity, 0);
     const deliveryCharge = orderDetails.type === 'delivery' ? settings.deliveryFee : 0;
 
-    const newOrder: Order = {
-      id: `BQ-${Math.floor(1000 + Math.random() * 9000)}`,
+    const newOrderId = `BQ-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newOrder: Order & { timestamp: number } = {
+      id: newOrderId,
       customerName: orderDetails.name,
       customerPhone: orderDetails.phone,
       address: orderDetails.address,
@@ -285,10 +351,13 @@ export default function App() {
       totalPrice: itemsTotal + deliveryCharge,
       status: 'pending',
       createdAt: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-      notes: orderDetails.notes,
+      notes: orderDetails.notes || '',
+      timestamp: Date.now(),
     };
 
-    setOrders((prev) => [newOrder, ...prev]);
+    // Update primarily on remote Firestore
+    safeSetDoc(doc(db, 'orders', newOrderId), newOrder);
+
     setCart([]); // Clear cart
     setCurrentTrackingOrderId(newOrder.id);
     setActiveTab('tracking');
@@ -301,61 +370,68 @@ export default function App() {
   // Admin adjustments
   const handleAddMenuItem = (newItem: Omit<MenuItem, 'id'>) => {
     const id = `sh-${Date.now()}`;
-    setMenuItems((prev) => [...prev, { ...newItem, id }]);
+    const itemData = { ...newItem, id };
+    safeSetDoc(doc(db, 'menuItems', id), itemData);
   };
 
   const handleUpdateMenuItem = (updatedItem: MenuItem) => {
-    setMenuItems((prev) =>
-      prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
-    );
+    safeSetDoc(doc(db, 'menuItems', updatedItem.id), updatedItem);
   };
 
   const handleToggleAvailability = (id: string) => {
-    setMenuItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, available: !item.available } : item))
-    );
+    const item = menuItems.find((m) => m.id === id);
+    if (item) {
+      safeSetDoc(doc(db, 'menuItems', id), { ...item, available: !item.available });
+    }
   };
 
   const handleDeleteMenuItem = (id: string) => {
-    setMenuItems((prev) => prev.filter((item) => item.id !== id));
+    safeDeleteDoc(doc(db, 'menuItems', id));
   };
 
-  const handleRestoreDefaultMenu = () => {
-    setMenuItems(DEFAULT_MENU_ITEMS);
+  const handleRestoreDefaultMenu = async () => {
+    // Clear and restore batch
+    for (const item of menuItems) {
+      await safeDeleteDoc(doc(db, 'menuItems', item.id));
+    }
+    for (const item of DEFAULT_MENU_ITEMS) {
+      await safeSetDoc(doc(db, 'menuItems', item.id), item);
+    }
   };
 
   const handleUpdateOrderStatus = (id: string, newStatus: OrderStatus) => {
-    setOrders((prev) =>
-      prev.map((order) => (order.id === id ? { ...order, status: newStatus } : order))
-    );
+    const ord = orders.find((o) => o.id === id);
+    if (ord) {
+      safeSetDoc(doc(db, 'orders', id), { ...ord, status: newStatus });
+    }
   };
 
   const handleOrderRatingSubmit = (orderId: string, stars: number, comment: string) => {
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === orderId
-          ? {
-              ...order,
-              rating: {
-                stars,
-                comment: comment.trim() || undefined,
-                createdAt: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-              },
-            }
-          : order
-      )
-    );
+    const ord = orders.find((o) => o.id === orderId);
+    if (ord) {
+      const updated = {
+        ...ord,
+        rating: {
+          stars,
+          comment: comment.trim() || undefined,
+          createdAt: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+        },
+      };
+      safeSetDoc(doc(db, 'orders', orderId), updated);
+    }
     setSelectedStars(0);
     setRatingComment('');
   };
 
   const handleClearOrders = () => {
-    setOrders([]);
+    orders.forEach((order) => {
+      safeDeleteDoc(doc(db, 'orders', order.id));
+    });
     setCurrentTrackingOrderId(null);
   };
 
   const handleUpdateSettings = (newSettings: RestaurantSettings) => {
-    setSettings(newSettings);
+    safeSetDoc(doc(db, 'settings', 'main'), newSettings);
   };
 
   // Find the currently tracked order details
@@ -624,59 +700,6 @@ export default function App() {
 
       {/* Main Container Stage Body */}
       <main className="flex-1 pb-16">
-        {/* Real-time Pending Order User Alarm Bar */}
-        {currentlyTrackedOrder && currentlyTrackedOrder.status === 'pending' && (
-          <div className="bg-red-50 border-b border-red-200 text-red-900 text-xs py-3 px-4 flex flex-col md:flex-row items-center justify-between gap-3 animate-pulse sticky top-[68px] z-30 font-sans" dir="rtl" id="pending-user-alarm-banner">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-2.5 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-650"></span>
-              </span>
-              <span className="font-extrabold text-[11px] sm:text-xs">
-                ⚠️ طلبك الساخن رمز <strong className="font-mono text-neutral-900 select-all">#{currentlyTrackedOrder.id}</strong> قيد الانتظار لموافقة الإدارة الآن! يرجى إبقاء الصوت والصفحة مفتوحة لمتابعة التحديثات.
-              </span>
-            </div>
-            <div className="flex items-center gap-2.5 w-full md:w-auto justify-between md:justify-end">
-              <span className="text-[10px] text-neutral-500 hidden lg:inline">جرس تنبيه مستمر مفعل 🔊</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const nextState = !soundEnabled;
-                    setSoundEnabled(nextState);
-                    if (nextState) {
-                      playNotificationSound('new_order');
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-[10px] font-black border transition cursor-pointer select-none ${
-                    soundEnabled
-                      ? 'bg-red-600 hover:bg-red-700 text-white border-red-750'
-                      : 'bg-white hover:bg-neutral-55 text-neutral-600 border-neutral-200'
-                  }`}
-                  id="pending-mute-toggle-btn"
-                >
-                  {soundEnabled ? '🔇 كتم جرس التنبيه' : '🔊 تشغيل رنين التنبيه'}
-                </button>
-                <button
-                  onClick={() => {
-                    setConfirmModal({
-                      message: `إلغاء الطلب المالي الحالي؟`,
-                      description: `عند إلغاء الطلب رقم #${currentlyTrackedOrder.id}، سيتم حذفه من طابور التحضير بمطعم باب شرقي فوراً ولن يتعين على المطبخ تجهيزه.`,
-                      onConfirm: () => {
-                        handleUpdateOrderStatus(currentlyTrackedOrder.id, 'cancelled');
-                        showToast(`🛑 تم إلغاء طلبك بنجاح تام وسيتوقف جرس الإنذار المباشر.`, 'warning');
-                      }
-                    });
-                  }}
-                  className="px-3 py-1.5 bg-white hover:bg-red-100 text-red-600 border border-red-200 rounded-xl text-[10px] font-bold transition cursor-pointer"
-                  id="pending-cancel-btn"
-                >
-                  إلغاء الطلب 🛑
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         <AnimatePresence mode="wait">
           {activeTab === 'menu' && (
             <CustomerMenu
@@ -735,36 +758,6 @@ export default function App() {
                     </div>
                     <h2 className="text-2xl font-black text-neutral-900 leading-tight">طلب طعامك قيد المعالجة الآن!</h2>
                     <p className="text-xs text-neutral-400 mt-1">كود تتبع الطلب: <span className="font-mono text-amber-700 font-extrabold">{currentlyTrackedOrder.id}</span></p>
-                    
-                    {/* User Sound Toggler gesture unmuter */}
-                    <div className="mt-3.5 flex justify-center">
-                      <button
-                        onClick={() => {
-                          const nextState = !soundEnabled;
-                          setSoundEnabled(nextState);
-                          if (nextState) {
-                            setTimeout(() => playNotificationSound('status_update'), 100);
-                          }
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer select-none ${
-                          soundEnabled
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/50 shadow-xs'
-                            : 'bg-neutral-100 text-neutral-600 border border-neutral-200'
-                        }`}
-                      >
-                        {soundEnabled ? (
-                          <>
-                            <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>تنبيهات الصوت مفعلة 🔊 (اضغط للكتم)</span>
-                          </>
-                        ) : (
-                          <>
-                            <VolumeX className="w-3.5 h-3.5 text-neutral-500" />
-                            <span>تنبيهات الصوت صامتة 🔇 (اضغط للتفعيل)</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
                   </div>
 
                   {/* Real-time Order Tracker Steps visually represented */}

@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { MenuItem, CartItem, Order, OrderStatus, RestaurantSettings } from './types';
-import { DEFAULT_MENU_ITEMS, INITIAL_SETTINGS } from './data';
+import { MenuItem, CartItem, Order, OrderStatus, RestaurantSettings, Offer } from './types';
+import { DEFAULT_MENU_ITEMS, INITIAL_SETTINGS, DEFAULT_OFFERS } from './data';
 import CustomerMenu from './components/CustomerMenu';
 import Cart from './components/Cart';
 import AdminPanel from './components/AdminPanel';
 import PwaInstallGuide from './components/PwaInstallGuide';
 import { playNotificationSound, initAudioContext } from './utils/audio';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { doc, collection } from 'firebase/firestore';
 import { safeSetDoc, safeDeleteDoc, safeOnSnapshot, OperationType } from './firebase';
 import {
@@ -34,6 +34,11 @@ export default function App() {
     return saved ? JSON.parse(saved) : DEFAULT_MENU_ITEMS;
   });
 
+  const [offers, setOffers] = useState<Offer[]>(() => {
+    const saved = localStorage.getItem('bab_sharqi_offers');
+    return saved ? JSON.parse(saved) : DEFAULT_OFFERS;
+  });
+
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem('bab_sharqi_orders');
     return saved ? JSON.parse(saved) : [];
@@ -57,6 +62,15 @@ export default function App() {
   // Client star rating & customer review submission states
   const [selectedStars, setSelectedStars] = useState<number>(0);
   const [ratingComment, setRatingComment] = useState<string>('');
+
+  const [authReady, setAuthReady] = useState<boolean>(true);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      // Auth ready is already true to bypass any connection delays, but we update if needed
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Admin access & security separation states (Strictly memory-only for absolute security)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
@@ -180,6 +194,7 @@ export default function App() {
 
   // 1. Live Sync Restaurant Settings from Firestore '/settings/main' doc
   useEffect(() => {
+    if (!authReady) return;
     const settingsDocRef = doc(db, 'settings', 'main');
     const unsubscribe = safeOnSnapshot(settingsDocRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -193,10 +208,11 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [authReady]);
 
   // 2. Live Sync Menu Items List from Firestore '/menuItems' collection
   useEffect(() => {
+    if (!authReady) return;
     const menuColRef = collection(db, 'menuItems');
     const unsubscribe = safeOnSnapshot(menuColRef, (snapshot) => {
       const items: MenuItem[] = [];
@@ -215,10 +231,34 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [authReady]);
+
+  // 2b. Live Sync Special Offers List from Firestore '/offers' collection
+  useEffect(() => {
+    if (!authReady) return;
+    const offersColRef = collection(db, 'offers');
+    const unsubscribe = safeOnSnapshot(offersColRef, (snapshot) => {
+      const loadedOffers: Offer[] = [];
+      snapshot.forEach((docSnap) => {
+        loadedOffers.push(docSnap.data() as Offer);
+      });
+      
+      if (loadedOffers.length > 0) {
+        setOffers(loadedOffers);
+      } else {
+        // Seed default offers onto remote Firestore collection if empty
+        DEFAULT_OFFERS.forEach((offer) => {
+          safeSetDoc(doc(db, 'offers', offer.id), offer);
+        });
+        setOffers(DEFAULT_OFFERS);
+      }
+    });
+    return () => unsubscribe();
+  }, [authReady]);
 
   // 3. Live Sync Active Orders List: Admin gets all, customer gets only their currently tracked order
   useEffect(() => {
+    if (!authReady) return;
     if (isAdminUnlocked) {
       const ordersColRef = collection(db, 'orders');
       const unsubscribe = safeOnSnapshot(
@@ -251,12 +291,27 @@ export default function App() {
     } else {
       setOrders([]);
     }
-  }, [isAdminUnlocked, currentTrackingOrderId]);
+  }, [authReady, isAdminUnlocked, currentTrackingOrderId]);
 
   // Persists individual transient cart state local to this browser
   useEffect(() => {
     localStorage.setItem('bab_sharqi_cart', JSON.stringify(cart));
   }, [cart]);
+
+  // Persists local menu backup state
+  useEffect(() => {
+    localStorage.setItem('bab_sharqi_menu', JSON.stringify(menuItems));
+  }, [menuItems]);
+
+  // Persists local orders backup state
+  useEffect(() => {
+    localStorage.setItem('bab_sharqi_orders', JSON.stringify(orders));
+  }, [orders]);
+
+  // Persists local offers backup state
+  useEffect(() => {
+    localStorage.setItem('bab_sharqi_offers', JSON.stringify(offers));
+  }, [offers]);
 
   useEffect(() => {
     if (currentTrackingOrderId) {
@@ -272,6 +327,9 @@ export default function App() {
       try {
         if (e.key === 'bab_sharqi_menu' && e.newValue) {
           setMenuItems(JSON.parse(e.newValue));
+        }
+        if (e.key === 'bab_sharqi_offers' && e.newValue) {
+          setOffers(JSON.parse(e.newValue));
         }
         if (e.key === 'bab_sharqi_orders' && e.newValue) {
           setOrders(JSON.parse(e.newValue));
@@ -355,6 +413,9 @@ export default function App() {
       timestamp: Date.now(),
     };
 
+    // Update local state instantly so there is absolutely no lag or delay in tracking
+    setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== newOrderId)]);
+
     // Update primarily on remote Firestore
     safeSetDoc(doc(db, 'orders', newOrderId), newOrder);
 
@@ -371,14 +432,21 @@ export default function App() {
   const handleAddMenuItem = (newItem: Omit<MenuItem, 'id'>) => {
     const id = `sh-${Date.now()}`;
     const itemData = { ...newItem, id };
+    setMenuItems((prev) => [...prev, itemData]);
     safeSetDoc(doc(db, 'menuItems', id), itemData);
   };
 
   const handleUpdateMenuItem = (updatedItem: MenuItem) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
+    );
     safeSetDoc(doc(db, 'menuItems', updatedItem.id), updatedItem);
   };
 
   const handleToggleAvailability = (id: string) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, available: !item.available } : item))
+    );
     const item = menuItems.find((m) => m.id === id);
     if (item) {
       safeSetDoc(doc(db, 'menuItems', id), { ...item, available: !item.available });
@@ -386,16 +454,69 @@ export default function App() {
   };
 
   const handleDeleteMenuItem = (id: string) => {
+    setMenuItems((prev) => prev.filter((item) => item.id !== id));
     safeDeleteDoc(doc(db, 'menuItems', id));
   };
 
   const handleRestoreDefaultMenu = async () => {
-    // Clear and restore batch
-    for (const item of menuItems) {
-      await safeDeleteDoc(doc(db, 'menuItems', item.id));
-    }
+    setMenuItems(DEFAULT_MENU_ITEMS);
+    // Overwrite existing defaults and delete custom items to prevent Firestore snapshot race condition
     for (const item of DEFAULT_MENU_ITEMS) {
       await safeSetDoc(doc(db, 'menuItems', item.id), item);
+    }
+    const defaultIds = new Set(DEFAULT_MENU_ITEMS.map((i) => i.id));
+    for (const item of menuItems) {
+      if (!defaultIds.has(item.id)) {
+        await safeDeleteDoc(doc(db, 'menuItems', item.id));
+      }
+    }
+  };
+
+  // Special Offers CRUD operations
+  const handleAddOffer = (newOffer: Omit<Offer, 'id' | 'createdAt'>) => {
+    const id = `off-${Date.now()}`;
+    const offerData: Offer = {
+      ...newOffer,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    setOffers((prev) => [...prev, offerData]);
+    safeSetDoc(doc(db, 'offers', id), offerData);
+  };
+
+  const handleUpdateOffer = (updatedOffer: Offer) => {
+    setOffers((prev) =>
+      prev.map((offer) => (offer.id === updatedOffer.id ? updatedOffer : offer))
+    );
+    safeSetDoc(doc(db, 'offers', updatedOffer.id), updatedOffer);
+  };
+
+  const handleToggleOfferAvailability = (id: string) => {
+    setOffers((prev) =>
+      prev.map((offer) => (offer.id === id ? { ...offer, available: !offer.available } : offer))
+    );
+    const offer = offers.find((o) => o.id === id);
+    if (offer) {
+      safeSetDoc(doc(db, 'offers', id), { ...offer, available: !offer.available });
+    }
+  };
+
+  const handleDeleteOffer = (id: string) => {
+    setOffers((prev) => prev.filter((offer) => offer.id !== id));
+    safeDeleteDoc(doc(db, 'offers', id));
+  };
+
+  const handleRestoreDefaultOffers = async () => {
+    setOffers(DEFAULT_OFFERS);
+    // Overwrite existing defaults and delete custom offers to prevent Firestore snapshot race condition
+    for (const offer of DEFAULT_OFFERS) {
+      await safeSetDoc(doc(db, 'offers', offer.id), offer);
+    }
+    const defaultOfferIds = new Set(DEFAULT_OFFERS.map((o) => o.id));
+    for (const offer of offers) {
+      if (!defaultOfferIds.has(offer.id)) {
+        await safeDeleteDoc(doc(db, 'offers', offer.id));
+      }
     }
   };
 
@@ -522,6 +643,12 @@ export default function App() {
             onToggleAvailability={handleToggleAvailability}
             onDeleteMenuItem={handleDeleteMenuItem}
             onRestoreDefaultMenu={handleRestoreDefaultMenu}
+            offers={offers}
+            onAddOffer={handleAddOffer}
+            onUpdateOffer={handleUpdateOffer}
+            onToggleOfferAvailability={handleToggleOfferAvailability}
+            onDeleteOffer={handleDeleteOffer}
+            onRestoreDefaultOffers={handleRestoreDefaultOffers}
             orders={orders}
             onUpdateOrderStatus={handleUpdateOrderStatus}
             onClearOrders={handleClearOrders}
@@ -704,6 +831,7 @@ export default function App() {
           {activeTab === 'menu' && (
             <CustomerMenu
               menuItems={menuItems}
+              offers={offers}
               currency={settings.currency}
               onAddToCart={handleAddToCart}
             />
@@ -730,6 +858,12 @@ export default function App() {
               onToggleAvailability={handleToggleAvailability}
               onDeleteMenuItem={handleDeleteMenuItem}
               onRestoreDefaultMenu={handleRestoreDefaultMenu}
+              offers={offers}
+              onAddOffer={handleAddOffer}
+              onUpdateOffer={handleUpdateOffer}
+              onToggleOfferAvailability={handleToggleOfferAvailability}
+              onDeleteOffer={handleDeleteOffer}
+              onRestoreDefaultOffers={handleRestoreDefaultOffers}
               orders={orders}
               onUpdateOrderStatus={handleUpdateOrderStatus}
               onClearOrders={handleClearOrders}

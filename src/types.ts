@@ -57,3 +57,16 @@ export interface RestaurantSettings {
   currency: string; // e.g., 'د.أ' (JD) or '$'
   isOpen: boolean;
 }
+
+export interface Offer {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  originalPrice: number;
+  image: string;
+  available: boolean;
+  discountCode?: string;
+  createdAt: string;
+}
+

@@ -1,4 +1,4 @@
-import { MenuItem, RestaurantSettings } from './types';
+import { MenuItem, RestaurantSettings, Offer } from './types';
 
 export const INITIAL_SETTINGS: RestaurantSettings = {
   name: 'مطعم باب شرقي',
@@ -108,3 +108,40 @@ export const DEFAULT_MENU_ITEMS: MenuItem[] = [
     available: true,
   }
 ];
+
+export const DEFAULT_OFFERS: Offer[] = [
+  {
+    id: 'off-1',
+    title: 'عرض الشلة البروستد 🍗✨',
+    description: 'وجبة بروستد غنية ومقرمشة (8 قطع دجاج بلدي طازج) بخلطة باب شرقي السرية + صحن حمص بيروتي بالزيت والمكسرات + علبة بطاطس حجم عائلي + 2 مشروبات غازية باردة مجاناً!',
+    price: 11.50,
+    originalPrice: 13.75,
+    image: 'https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?auto=format&fit=crop&w=800&q=80',
+    available: true,
+    discountCode: 'SHARQI_PARTY',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'off-2',
+    title: 'ثنائية الشاورما الأسطورية 🌯🤝',
+    description: 'وجبتين كاملتين شاورما دبل باب شرقي الشهيرة (خبز صاج، دبس رمان، ثوم مدهون ع الفحم) + بطاطس مقلية ذهبية + مخلل بلدي مقرمش وثومية إمبراطورية + كولا باردة للحبايب!',
+    price: 6.90,
+    originalPrice: 8.50,
+    image: 'https://images.unsplash.com/photo-1642970347854-c9f280a5682b?auto=format&fit=crop&w=800&q=80',
+    available: true,
+    discountCode: 'SH_DUO',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'off-3',
+    title: 'وجبة التوفير الشقردية 😋🔥',
+    description: 'ساندويش شاورما سوبر شروق الغنية بالثومية ودبس الرمان + صحن متبل باذنجان مشوي بالرمان والليمون + كانز بيبسي بارد ومنعش بسعر مغري جداً!',
+    price: 3.25,
+    originalPrice: 4.35,
+    image: 'https://images.unsplash.com/photo-1561651823-34feb02250e4?auto=format&fit=crop&w=800&q=80',
+    available: true,
+    discountCode: 'SOLOSAVE',
+    createdAt: new Date().toISOString(),
+  }
+];
+

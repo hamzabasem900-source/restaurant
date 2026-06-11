@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { MenuItem, Category, CartItem } from '../types';
-import { Search, Plus, Check, ShoppingBag, Eye, Star, Heart } from 'lucide-react';
+import { MenuItem, Category, CartItem, Offer } from '../types';
+import { Search, Plus, Check, ShoppingBag, Eye, Star, Heart, Sparkles, Tag, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface CustomerMenuProps {
   menuItems: MenuItem[];
+  offers?: Offer[];
   currency: string;
   onAddToCart: (item: MenuItem, quantity: number, addOns: string[], note: string) => void;
 }
 
-export default function CustomerMenu({ menuItems, currency, onAddToCart }: CustomerMenuProps) {
+export default function CustomerMenu({ menuItems, offers = [], currency, onAddToCart }: CustomerMenuProps) {
   const [selectedCategory, setSelectedCategory] = useState<Category>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItemForModal, setSelectedItemForModal] = useState<MenuItem | null>(null);
@@ -77,6 +78,109 @@ export default function CustomerMenu({ menuItems, currency, onAddToCart }: Custo
           تذوق ألذ ساندويشات الشاورما بدبس الرمان والبروستد الذهبي المقرمش المحضر طازجاً يومياً بأجود المكونات المحلية.
         </p>
       </div>
+
+      {/* 🎁 Special Animated Offers Carousel/Grid Section */}
+      {offers.filter(o => o.available).length > 0 && (
+        <div className="mb-10 bg-linear-to-r from-amber-50/70 via-rose-50/40 to-amber-50/70 rounded-3xl p-5 sm:p-7 border border-amber-100/60 shadow-xs relative overflow-hidden">
+          {/* Subtle bg vector effects */}
+          <div className="absolute top-0 left-0 w-24 h-24 bg-amber-250 rounded-full blur-3xl opacity-30 -translate-x-12 -translate-y-12"></div>
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-amber-100/40 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-xl animate-bounce">🎁</span>
+              <div>
+                <h3 className="font-black text-neutral-900 text-sm sm:text-base">عروض الغداء والعطلات الكبرى 🔥</h3>
+                <p className="text-[10px] sm:text-xs text-amber-800">وفّر حتى 30% مع التوصيل المجاني للمحبة والفتح!</p>
+              </div>
+            </div>
+            <span className="self-start sm:self-center bg-rose-600 text-white text-[9px] sm:text-[10px] font-extrabold px-3 py-1.5 rounded-xl flex items-center gap-1 shadow-xs">
+              <Sparkles className="w-3 h-3 text-white animate-pulse" />
+              عروض حصرية وخاصة فقط 🌟
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {offers.filter(o => o.available).map((offer) => {
+              const savings = (offer.originalPrice - offer.price).toFixed(2);
+              return (
+                <motion.div
+                  key={offer.id}
+                  whileHover={{ y: -3 }}
+                  className="bg-white rounded-2xl p-4 border border-amber-100 shadow-xs flex flex-col justify-between relative group"
+                >
+                  {/* Saving Badge */}
+                  <span className="absolute top-3 right-3 bg-red-650 text-white text-[9px] font-black px-2.5 py-1 rounded-lg shadow-sm z-10 animate-bounce">
+                    وفر خصم {savings} {currency}
+                  </span>
+
+                  <div className="space-y-3">
+                    {/* Offer Image */}
+                    <div className="h-40 w-full rounded-xl overflow-hidden bg-neutral-100 relative">
+                      <img
+                        src={offer.image}
+                        alt={offer.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-right">
+                      <h4 className="font-extrabold text-neutral-900 text-sm sm:text-base leading-tight">
+                        {offer.title}
+                      </h4>
+                      <p className="text-[11px] text-neutral-500 leading-normal line-clamp-2">
+                        {offer.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-neutral-100 space-y-3">
+                    {/* Price panel */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-base sm:text-xl font-black text-amber-750 font-sans">
+                          {offer.price.toFixed(2)} <span className="text-xs text-neutral-500">{currency}</span>
+                        </span>
+                        <span className="text-xs text-neutral-400 line-through font-sans">
+                          {offer.originalPrice.toFixed(2)} {currency}
+                        </span>
+                      </div>
+                      
+                      {offer.discountCode && (
+                        <span className="bg-amber-50 text-amber-800 text-[9px] font-extrabold px-2.5 py-1 rounded-lg border border-amber-100/60 font-sans flex items-center gap-1">
+                          <Tag className="w-2.5 h-2.5 text-amber-600" />
+                          كود: {offer.discountCode}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Action button */}
+                    <button
+                      onClick={() => {
+                        const simulatedItem: MenuItem = {
+                          id: offer.id,
+                          name: offer.title,
+                          description: offer.description,
+                          price: offer.price,
+                          category: 'shawarma',
+                          image: offer.image,
+                          available: offer.available,
+                          add_on_options: []
+                        };
+                        onAddToCart(simulatedItem, 1, [], '');
+                      }}
+                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      طلب العرض وإضافته للسلة 🛍️
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search and Filters Section */}
       <div className="mb-6 space-y-3">

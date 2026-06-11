@@ -49,6 +49,23 @@
         "rating": { "type": "object", "description": "Post-consumption rating stars and comment details" }
       },
       "required": ["id", "customerName", "customerPhone", "address", "paymentMethod", "type", "items", "totalPrice", "status", "createdAt"]
+    },
+    "Offer": {
+      "title": "Offer",
+      "description": "A special discounted food bundle or promotional meal deal sync'd in real-time.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique key identifier of the special offer" },
+        "title": { "type": "string", "description": "The title of the special deal in Arabic" },
+        "description": { "type": "string", "description": "Detailed items and perks included in this deal" },
+        "price": { "type": "number", "description": "The special discounted pricing of this bundle" },
+        "originalPrice": { "type": "number", "description": "The standard total value of the items before discount" },
+        "image": { "type": "string", "description": "A delectable illustration, logo or photo URL link" },
+        "available": { "type": "boolean", "description": "Whether the offer is currently open to order" },
+        "discountCode": { "type": "string", "description": "Optional promo checkout coupon key" },
+        "createdAt": { "type": "string", "description": "ISO compliant timestamp of creation" }
+      },
+      "required": ["id", "title", "description", "price", "originalPrice", "image", "available", "createdAt"]
     }
   },
   "firestore": {
@@ -63,6 +80,10 @@
     "/orders/{orderId}": {
       "schema": "Order",
       "description": "Database recording customer transactions and order statuses."
+    },
+    "/offers/{offerId}": {
+      "schema": "Offer",
+      "description": "Limited-time deals, discount codes, combos, and specials published by store managers."
     }
   }
 }

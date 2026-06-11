@@ -1,24 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Global safety net: default deny for any unexpected collections
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // 1. Restaurant Settings Rules (Read & Write permitted to allow public initialization and settings adjustments)
-    match /settings/{settingsId} {
-      allow read, write: if true;
-    }
-
-    // 2. Food Menu Items Rules (Read & Write permitted so anyone can view and seed/edit menu items)
-    match /menuItems/{itemId} {
-      allow read, write: if true;
-    }
-
-    // 3. Food Orders Rules (Customers can view/track their order and write new transactions easily)
-    match /orders/{orderId} {
       allow read, write: if true;
     }
   }

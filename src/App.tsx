@@ -114,8 +114,8 @@ export default function App() {
   }, [soundEnabled]);
 
   useEffect(() => {
-    // Audit sound alerts: Only admins receive status change audio blips
-    if (!isAdminUnlocked) {
+    // Audit sound alerts: Only admins on the admin tab receive audio alerts
+    if (!isAdminUnlocked || activeTab !== 'admin') {
       prevOrdersRef.current = orders;
       return;
     }
@@ -150,11 +150,11 @@ export default function App() {
     }
 
     prevOrdersRef.current = orders;
-  }, [orders, soundEnabled, isAdminUnlocked]);
+  }, [orders, soundEnabled, isAdminUnlocked, activeTab]);
 
   // Looping continuous alarm sound for pending orders (Only for Admin dashboard)
   useEffect(() => {
-    if (!soundEnabled || !isAdminUnlocked) return;
+    if (!soundEnabled || !isAdminUnlocked || activeTab !== 'admin') return;
 
     // Admin hears alarm if any order in the entire system is pending
     const shouldRing = orders.some((o) => o.status === 'pending');
@@ -169,7 +169,7 @@ export default function App() {
     }, 4500); // Repeat every 4.5 seconds to command persistent attention with crisp audio
 
     return () => clearInterval(interval);
-  }, [orders, soundEnabled, isAdminUnlocked]);
+  }, [orders, soundEnabled, isAdminUnlocked, activeTab]);
 
   // Monitor brute-force lockout status in real-time
   useEffect(() => {
@@ -221,6 +221,14 @@ export default function App() {
       });
       
       if (items.length > 0) {
+        // Sort items dynamically to preserve a stable intuitive layout order
+        const catOrder: Record<string, number> = { shawarma: 1, broasted: 2, appetizers: 3, drinks: 4 };
+        items.sort((a, b) => {
+          const orderA = catOrder[a.category] || 99;
+          const orderB = catOrder[b.category] || 99;
+          if (orderA !== orderB) return orderA - orderB;
+          return a.id.localeCompare(b.id, 'en', { numeric: true });
+        });
         setMenuItems(items);
       } else {
         // First-ever initialization: seed and publish static defaults onto remote Firestore collection
@@ -244,6 +252,7 @@ export default function App() {
       });
       
       if (loadedOffers.length > 0) {
+        loadedOffers.sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));
         setOffers(loadedOffers);
       } else {
         // Seed default offers onto remote Firestore collection if empty
@@ -460,16 +469,18 @@ export default function App() {
 
   const handleRestoreDefaultMenu = async () => {
     setMenuItems(DEFAULT_MENU_ITEMS);
-    // Overwrite existing defaults and delete custom items to prevent Firestore snapshot race condition
-    for (const item of DEFAULT_MENU_ITEMS) {
-      await safeSetDoc(doc(db, 'menuItems', item.id), item);
-    }
+    // Overwrite existing defaults and delete custom items to prevent Firestore snapshot race condition concurrently
+    const promises: Promise<any>[] = [];
+    DEFAULT_MENU_ITEMS.forEach((item) => {
+      promises.push(safeSetDoc(doc(db, 'menuItems', item.id), item));
+    });
     const defaultIds = new Set(DEFAULT_MENU_ITEMS.map((i) => i.id));
-    for (const item of menuItems) {
+    menuItems.forEach((item) => {
       if (!defaultIds.has(item.id)) {
-        await safeDeleteDoc(doc(db, 'menuItems', item.id));
+        promises.push(safeDeleteDoc(doc(db, 'menuItems', item.id)));
       }
-    }
+    });
+    await Promise.all(promises);
   };
 
   // Special Offers CRUD operations
@@ -508,22 +519,31 @@ export default function App() {
 
   const handleRestoreDefaultOffers = async () => {
     setOffers(DEFAULT_OFFERS);
-    // Overwrite existing defaults and delete custom offers to prevent Firestore snapshot race condition
-    for (const offer of DEFAULT_OFFERS) {
-      await safeSetDoc(doc(db, 'offers', offer.id), offer);
-    }
+    // Overwrite existing defaults and delete custom offers to prevent Firestore snapshot race condition concurrently
+    const promises: Promise<any>[] = [];
+    DEFAULT_OFFERS.forEach((offer) => {
+      promises.push(safeSetDoc(doc(db, 'offers', offer.id), offer));
+    });
     const defaultOfferIds = new Set(DEFAULT_OFFERS.map((o) => o.id));
-    for (const offer of offers) {
+    offers.forEach((offer) => {
       if (!defaultOfferIds.has(offer.id)) {
-        await safeDeleteDoc(doc(db, 'offers', offer.id));
+        promises.push(safeDeleteDoc(doc(db, 'offers', offer.id)));
       }
-    }
+    });
+    await Promise.all(promises);
   };
 
   const handleUpdateOrderStatus = (id: string, newStatus: OrderStatus) => {
     const ord = orders.find((o) => o.id === id);
     if (ord) {
       safeSetDoc(doc(db, 'orders', id), { ...ord, status: newStatus });
+    }
+  };
+
+  const handleUpdateOrderDeliveryTime = (id: string, minutes: number) => {
+    const ord = orders.find((o) => o.id === id);
+    if (ord) {
+      safeSetDoc(doc(db, 'orders', id), { ...ord, estimatedDeliveryTime: minutes });
     }
   };
 
@@ -544,11 +564,10 @@ export default function App() {
     setRatingComment('');
   };
 
-  const handleClearOrders = () => {
-    orders.forEach((order) => {
-      safeDeleteDoc(doc(db, 'orders', order.id));
-    });
+  const handleClearOrders = async () => {
+    const promises = orders.map((order) => safeDeleteDoc(doc(db, 'orders', order.id)));
     setCurrentTrackingOrderId(null);
+    await Promise.all(promises);
   };
 
   const handleUpdateSettings = (newSettings: RestaurantSettings) => {
@@ -651,6 +670,7 @@ export default function App() {
             onRestoreDefaultOffers={handleRestoreDefaultOffers}
             orders={orders}
             onUpdateOrderStatus={handleUpdateOrderStatus}
+            onUpdateOrderDeliveryTime={handleUpdateOrderDeliveryTime}
             onClearOrders={handleClearOrders}
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
@@ -694,6 +714,78 @@ export default function App() {
             </div>
           </div>
         </footer>
+
+        {/* Custom Application Toast System */}
+        <AnimatePresence>
+          {toastMessage && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 50 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed bottom-6 left-6 right-6 md:left-auto md:w-[380px] z-50 p-4 rounded-2xl shadow-xl flex items-start gap-3 border text-right leading-relaxed font-sans"
+              style={{
+                backgroundColor: toastMessage.type === 'success' ? '#ECFDF5' : toastMessage.type === 'warning' ? '#FFFBEB' : toastMessage.type === 'error' ? '#FEF2F2' : '#F8FAFC',
+                borderColor: toastMessage.type === 'success' ? '#10B981' : toastMessage.type === 'warning' ? '#F59E0B' : toastMessage.type === 'error' ? '#EF4444' : '#E2E8F0',
+                color: toastMessage.type === 'success' ? '#065F46' : toastMessage.type === 'warning' ? '#92400E' : toastMessage.type === 'error' ? '#991B1B' : '#1E293B',
+              }}
+            >
+              <div className="text-sm font-sans shrink-0">
+                {toastMessage.type === 'success' ? '✓' : toastMessage.type === 'warning' ? '⚠️' : toastMessage.type === 'error' ? '🛑' : '💡'}
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-black">{toastMessage.text}</p>
+              </div>
+              <button
+                onClick={() => setToastMessage(null)}
+                className="text-neutral-400 hover:text-neutral-600 font-bold text-xs cursor-pointer px-1 shrink-0"
+              >
+                ×
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Safe Custom Elegant Confirmation Dialog Modal */}
+        <AnimatePresence>
+          {confirmModal && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[60] p-4 font-sans" dir="rtl">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-neutral-100 text-right space-y-4"
+              >
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl">
+                    ❓
+                  </div>
+                  <h3 className="text-xs sm:text-sm font-extrabold text-neutral-900 leading-relaxed">{confirmModal.message}</h3>
+                  {confirmModal.description && (
+                    <p className="text-[10px] text-neutral-400 font-sans leading-relaxed">{confirmModal.description}</p>
+                  )}
+                </div>
+                
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    onClick={() => {
+                      confirmModal.onConfirm();
+                      setConfirmModal(null);
+                    }}
+                    className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                  >
+                    تأكيد ومتابعة ✓
+                  </button>
+                  <button
+                    onClick={() => setConfirmModal(null)}
+                    className="flex-1 py-2 bg-neutral-105 hover:bg-neutral-150 text-neutral-600 text-xs font-bold rounded-xl transition cursor-pointer"
+                  >
+                    إلغاء التراجع
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -866,6 +958,7 @@ export default function App() {
               onRestoreDefaultOffers={handleRestoreDefaultOffers}
               orders={orders}
               onUpdateOrderStatus={handleUpdateOrderStatus}
+              onUpdateOrderDeliveryTime={handleUpdateOrderDeliveryTime}
               onClearOrders={handleClearOrders}
               settings={settings}
               onUpdateSettings={handleUpdateSettings}
@@ -880,32 +973,56 @@ export default function App() {
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 15 }}
-              className="max-w-xl mx-auto px-4 py-12 text-right"
-              dir="rtl"
+              exit={{ opacity: 0, y: -15 }}
+              className="max-w-2xl mx-auto px-4 mt-6 font-sans text-right"
             >
               {currentlyTrackedOrder ? (
                 <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-100 shadow-xl space-y-6">
                   <div className="text-center">
-                    <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-600 mb-3 animate-pulse">
-                      🛸
+                    <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-600 mb-3 animate-pulse text-2xl">
+                      {currentlyTrackedOrder.status === 'pending' && '⏳'}
+                      {currentlyTrackedOrder.status === 'preparing' && '👨‍🍳'}
+                      {currentlyTrackedOrder.status === 'delivering' && '🛵'}
+                      {currentlyTrackedOrder.status === 'completed' && '🎉'}
+                      {currentlyTrackedOrder.status === 'cancelled' && '🛑'}
                     </div>
-                    <h2 className="text-2xl font-black text-neutral-900 leading-tight">طلب طعامك قيد المعالجة الآن!</h2>
+                    <h2 className="text-2xl font-black text-neutral-900 leading-tight">
+                      {currentlyTrackedOrder.status === 'pending' && 'جاري مراجعة طلبك وتأكيده الآن! ⏳'}
+                      {currentlyTrackedOrder.status === 'preparing' && 'وجبتك اللذيذة قيد التحضير والتجهيز! 👨‍🍳🔥'}
+                      {currentlyTrackedOrder.status === 'delivering' && 'طلبك في الطريق إليك الآن سريعاً! 🛵💨'}
+                      {currentlyTrackedOrder.status === 'completed' && 'تم تسليم طلبك بألف صحة وعافية! 🥙🎉'}
+                      {currentlyTrackedOrder.status === 'cancelled' && 'نعذرك، لقد تم إلغاء هذا الطلب 🛑'}
+                    </h2>
                     <p className="text-xs text-neutral-400 mt-1">كود تتبع الطلب: <span className="font-mono text-amber-700 font-extrabold">{currentlyTrackedOrder.id}</span></p>
                   </div>
+
+                  {/* Dynamic delivery/preparation time display for the customer */}
+                  {currentlyTrackedOrder.status !== 'completed' && currentlyTrackedOrder.status !== 'cancelled' && (
+                    <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-4 text-center space-y-1 mt-2">
+                      <span className="text-xs text-amber-800 font-bold block">
+                        ⏱️ {currentlyTrackedOrder.type === 'delivery' ? 'الوقت المتوقع للتجهيز والتوصيل للمنزل' : currentlyTrackedOrder.type === 'pickup' ? 'الوقت المتوقع لتجهيز الطلب واستلامه سفري' : 'الوقت المتوقع لتجهيز الوجبة وتقديمها على الطاولة'}:
+                      </span>
+                      <div className="text-2xl font-black text-amber-600 font-sans tracking-wide">
+                        {currentlyTrackedOrder.estimatedDeliveryTime || 40} دقيقة
+                      </div>
+                      <p className="text-[10px] text-neutral-400 leading-relaxed font-sans">
+                        (هذا الوقت تقديري يتم تحديثه ديناميكياً من قبل إدارة المطعم)
+                      </p>
+                    </div>
+                  )}
 
                   {/* Real-time Order Tracker Steps visually represented */}
                   {currentlyTrackedOrder.status === 'cancelled' ? (
                     <div className="my-6 bg-red-50 border border-red-200/60 p-5 rounded-2xl text-right space-y-2">
-                      <div className="flex items-center gap-2 text-red-700 font-extrabold text-sm">
-                        <span>🛑 تم إلغاء كابينة التحضير لهذا الطلب!</span>
+                       <div className="flex items-center gap-2 text-red-700 font-extrabold text-sm">
+                        <span>🛑 تم إلغاء هذا الطلب!</span>
                       </div>
                       <p className="text-[11px] text-red-850 leading-relaxed font-sans">
-                        نأسف لإبلاغك بأنه تم إلغاء طلب الوجبات هذا وتغيير حالته إلى صامت ملغى في نظام الكاشير والمطبخ المالي. إذا كان لديك أي استفسار يرجى الاتصال مباشرة بإدارة المطعم.
+                        نأسف لإبلاغك بأنه تم إلغاء طلب الوجبات هذا وتغيير حالته إلى ملغى في نظام الكاشير والمطبخ. إذا كان لديك أي استفسار يرجى الاتصال مباشرة بإدارة المطعم.
                       </p>
                       <div className="pt-1.5">
                         <button
-                          onClick={() => setActiveTab('menu')}
+                           onClick={() => setActiveTab('menu')}
                           className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold transition cursor-pointer"
                         >
                           👈 اذهب لقائمة المأكولات لطلب وجبة جديدة
@@ -920,9 +1037,9 @@ export default function App() {
                           currentlyTrackedOrder.status === 'pending' ? 'bg-amber-500 animate-ping' : 'bg-green-600'
                         }`}></div>
                         <h4 className={`font-bold ${currentlyTrackedOrder.status === 'pending' ? 'text-amber-600 text-sm' : 'text-neutral-900'}`}>
-                          مرحلة الموافقة الأولى بالمكتب ⏳
+                          انتظار تأكيد الطلب من المطعم ⏳
                         </h4>
-                        <p className="text-[10px] text-neutral-400">يقوم المحاسب الآن بدراسة سلة المشتريات والتأكيد الفوري.</p>
+                        <p className="text-[10px] text-neutral-400">يقوم فريق العمل بمراجعة طلبك وتأكيده لبدء التحضير فوراً.</p>
                       </div>
 
                       {/* Step 2: Preparing */}
@@ -931,9 +1048,9 @@ export default function App() {
                           currentlyTrackedOrder.status === 'preparing' ? 'bg-blue-500 animate-ping' : currentlyTrackedOrder.status === 'pending' ? 'bg-neutral-200' : 'bg-green-600'
                         }`}></div>
                         <h4 className={`font-bold ${currentlyTrackedOrder.status === 'preparing' ? 'text-blue-600 text-sm' : (currentlyTrackedOrder.status === 'delivering' || currentlyTrackedOrder.status === 'completed') ? 'text-neutral-900' : 'text-neutral-400'}`}>
-                          شحن الشاورما والبروستد للموقد والتحضير 👨‍🍳🔥
+                          تحضير وتجهيز وجبتك اللذيذة في المطبخ 👨‍🍳🔥
                         </h4>
-                        <p className="text-[10px] text-neutral-400 font-sans">معلم شاورما باب شرقي يقوم بصف الوجبة وقلي البطاطس لتكون ساخنة ومقرمشة.</p>
+                        <p className="text-[10px] text-neutral-400 font-sans">يقوم طهاة باب شرقي المهرة بتحضير الوجبة بأعلى معايير الجودة وقلي المقرمشات بالشكل المثالي.</p>
                       </div>
 
                       {/* Step 3: Delivering */}
@@ -942,7 +1059,7 @@ export default function App() {
                           currentlyTrackedOrder.status === 'delivering' ? 'bg-purple-500 animate-ping' : (currentlyTrackedOrder.status === 'completed') ? 'bg-green-600' : 'bg-neutral-200'
                         }`}></div>
                         <h4 className={`font-bold ${currentlyTrackedOrder.status === 'delivering' ? 'text-purple-600 text-sm' : currentlyTrackedOrder.status === 'completed' ? 'text-neutral-900' : 'text-neutral-400'}`}>
-                          سائق الدليفري يستعجل الطريق لإيصالها ساخنة 🛵💨
+                          سائق التوصيل يستعجل الطريق لإيصالها ساخنة 🛵💨
                         </h4>
                         <p className="text-[10px] text-neutral-400">الوجبة معبأة بعلب حافظة للحرارة وتسير في طريقها إليك.</p>
                       </div>
@@ -953,7 +1070,7 @@ export default function App() {
                           currentlyTrackedOrder.status === 'completed' ? 'bg-green-600' : 'bg-neutral-200'
                         }`}></div>
                         <h4 className={`font-bold ${currentlyTrackedOrder.status === 'completed' ? 'text-green-600 text-sm' : 'text-neutral-400'}`}>
-                          تم استلام الطلب بألف هنا وشفاء! 🥙🎉
+                          تم استلام الطلب بألف صحة وعافية! 🥙🎉
                         </h4>
                         <p className="text-[10px] text-neutral-400">الوجبة وصلت يدك الكريمة. نتمنى لك تذوقاً رائعاً لباب شرقي!</p>
                       </div>
@@ -969,7 +1086,7 @@ export default function App() {
                     >
                       {currentlyTrackedOrder.rating ? (
                         <div className="bg-emerald-50 border border-emerald-200/60 p-4 rounded-2xl text-right space-y-1.5 shadow-xs">
-                          <p className="text-xs text-emerald-900 font-extrabold flex items-center gap-1.5">
+                          <p className="text-xs text-emerald-950 font-extrabold flex items-center gap-1.5">
                             <span>🎉 تم إرسال تقييمك للمطعم بنجاح!</span>
                           </p>
                           <div className="flex gap-1 text-amber-500">
@@ -992,7 +1109,7 @@ export default function App() {
                               ⭐ كيف كانت وجبتك وتجربة باب شرقي اليوم؟
                             </h4>
                             <p className="text-[10px] text-neutral-500 leading-relaxed mt-0.5 font-sans">
-                              رأيك يدعم معلم الشاورما وعمال التدبير لتحسين الجودة. الرجاء اختيار النجوم وإخطار المطبخ برأيك الموثوق!
+                              رأيك يدعم كادر طهاتنا وفريق العمل لتقديم الأفضل دائماً والحرص على إرضائكم!
                             </p>
                           </div>
 
@@ -1033,7 +1150,7 @@ export default function App() {
                               placeholder="اكتب ملاحظاتك عن جودة الطعام، السخونة، أو سرعة التوصيل..."
                               value={ratingComment}
                               onChange={(e) => setRatingComment(e.target.value)}
-                              className="w-full px-3.5 py-2 && border border-neutral-200 rounded-xl text-xs text-neutral-850 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-sans leading-relaxed text-right"
+                              className="w-full px-3.5 py-2 border border-neutral-200 rounded-xl text-xs text-neutral-850 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-sans leading-relaxed text-right"
                               dir="rtl"
                               rows={2}
                             />

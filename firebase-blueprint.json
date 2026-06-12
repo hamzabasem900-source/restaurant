@@ -46,7 +46,8 @@
         "status": { "type": "string", "description": "Order progression status, e.g., pending, completed" },
         "createdAt": { "type": "string", "description": "ISO compliant write local timestamp" },
         "notes": { "type": "string", "description": "Any custom instructions" },
-        "rating": { "type": "object", "description": "Post-consumption rating stars and comment details" }
+        "rating": { "type": "object", "description": "Post-consumption rating stars and comment details" },
+        "estimatedDeliveryTime": { "type": "number", "description": "Dynamic time in minutes assigned by the staff for prep and delivery" }
       },
       "required": ["id", "customerName", "customerPhone", "address", "paymentMethod", "type", "items", "totalPrice", "status", "createdAt"]
     },

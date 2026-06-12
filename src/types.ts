@@ -47,6 +47,7 @@ export interface Order {
   createdAt: string;
   notes?: string;
   rating?: OrderRating;
+  estimatedDeliveryTime?: number;
 }
 
 export interface RestaurantSettings {

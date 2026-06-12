@@ -50,6 +50,7 @@ interface AdminPanelProps {
   onRestoreDefaultOffers?: () => void;
   orders: Order[];
   onUpdateOrderStatus: (id: string, status: OrderStatus) => void;
+  onUpdateOrderDeliveryTime: (id: string, minutes: number) => void;
   onClearOrders: () => void;
   settings: RestaurantSettings;
   onUpdateSettings: (newSettings: RestaurantSettings) => void;
@@ -74,6 +75,7 @@ export default function AdminPanel({
   onRestoreDefaultOffers,
   orders,
   onUpdateOrderStatus,
+  onUpdateOrderDeliveryTime,
   onClearOrders,
   settings,
   onUpdateSettings,
@@ -685,6 +687,52 @@ export default function AdminPanel({
                           {order.totalPrice.toFixed(2)} {settings.currency}
                         </span>
                       </div>
+
+                      {/* Dynamic Delivery/Preparation Time Editor */}
+                      {order.status !== 'completed' && order.status !== 'cancelled' && (
+                        <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-200/45 space-y-2 text-right">
+                          <span className="text-[11px] font-extrabold text-neutral-700 flex items-center justify-between gap-1.5">
+                            <span>⏱️ الوقت المتوقع {order.type === 'delivery' ? 'التوصيل' : 'الاستلام'}:</span>
+                            <span className="bg-amber-100 text-amber-950 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">
+                              {order.estimatedDeliveryTime || 40} دقيقة
+                            </span>
+                          </span>
+                          
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <select
+                              value={order.estimatedDeliveryTime || 40}
+                              onChange={(e) => onUpdateOrderDeliveryTime(order.id, parseInt(e.target.value) || 40)}
+                              className="text-[11px] px-2 py-1 border border-neutral-200 rounded-lg text-neutral-800 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white cursor-pointer"
+                              dir="rtl"
+                            >
+                              <option value={15}>15 دقيقة (جاري التحضير ⚡)</option>
+                              <option value={20}>20 دقيقة (سريع جداً ✨)</option>
+                              <option value={30}>30 دقيقة (مناسب 👍)</option>
+                              <option value={40}>40 دقيقة (قياسي 📦)</option>
+                              <option value={50}>50 دقيقة (مزدحم قليلاً 🕒)</option>
+                              <option value={60}>60 دقيقة (ساعة كاملة ⚠️)</option>
+                              <option value={90}>90 دقيقة (تساؤل أو تأخر 🚨)</option>
+                            </select>
+
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={5}
+                                max={240}
+                                value={order.estimatedDeliveryTime || 40}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (val && val >= 5 && val <= 240) {
+                                    onUpdateOrderDeliveryTime(order.id, val);
+                                  }
+                                }}
+                                className="w-12 text-center text-[11px] font-bold py-1 border border-neutral-200 rounded-lg text-neutral-800 focus:outline-none focus:ring-1 focus:ring-amber-500 font-sans"
+                              />
+                              <span className="text-[10px] text-neutral-500 font-sans">د</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Action trigger states */}
                       <div className="flex flex-wrap gap-1">

@@ -2,6 +2,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc,
   getDoc,
   getDocs,
@@ -18,7 +21,26 @@ import {
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+
+// Initialize Firestore with a robust offline persistence layer
+let dbInstance;
+try {
+  dbInstance = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    },
+    firebaseConfig.firestoreDatabaseId || undefined
+  );
+  console.log('✅ Firestore initiated with persistent local cache.');
+} catch (e) {
+  console.warn('⚠️ Standard Firestore initiated (persistence already initialized or unsupported):', e);
+  dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+}
+
+export const db = dbInstance;
 export const auth = getAuth();
 
 // Auto sign-in anonymously if not signed in to allow Firestore security rules to be tied to a valid request.auth.uid
@@ -52,7 +74,7 @@ export interface FirestoreErrorInfo {
   };
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -69,8 +91,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Error Intercepted: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.warn('⚠️ Firestore safe operation warning intercepted:', JSON.stringify(errInfo));
 }
 
 // Hardened CRUD Helpers wrapped in full telemetry exception reporters
@@ -134,9 +155,8 @@ export async function testConnection() {
     await getDocFromServer(doc(db, 'settings', 'main'));
     console.log('✅ Firebase connection validated successfully.');
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Please check your offline network or Firebase configuration.");
-    }
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.warn(`ℹ️ Operating in fallback or offline mode. Connection info: ${errorMsg}`);
   }
 }
 testConnection();
